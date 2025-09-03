@@ -16,9 +16,8 @@ Usage:
   python list_assignments.py --all         # include unpublished/locked
 """
 
-import sys, json, re, argparse, time
+import sys, json, argparse
 from pathlib import Path
-from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 import requests
@@ -28,33 +27,8 @@ API_BASE = "https://wsu.instructure.com/api/v1"
 
 # Note: keep module import-safe; no config or session setup at import time.
 
-
-def parse_links(h: str) -> Dict[str, str]:
-    """Parse RFC 5988 Link header into dict(rel -> url)."""
-    out: Dict[str, str] = {}
-    if not h:
-        return out
-    for part in h.split(","):
-        m = re.search(r'<([^>]+)>\s*;\s*rel="([^"]+)"', part.strip())
-        if m:
-            out[m.group(2)] = m.group(1)
-    return out
-
-
-def iso_to_local(iso: str | None) -> str:
-    """Canvas returns ISO8601 UTC strings like '2025-09-21T23:59:00Z'.
-    Return human-readable local time 'YYYY-MM-DD HH:MM (TZ)'."""
-    if not iso:
-        return ""
-    s = iso.replace("Z", "+00:00")
-    try:
-        dt = datetime.fromisoformat(s)
-    except ValueError:
-        return iso
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    local = dt.astimezone()  # convert to local timezone
-    return local.strftime("%Y-%m-%d %H:%M (%Z)")
+from canvascli.formatting import iso_to_local
+from canvascli.api import iter_paginated
 
 
 def fetch_assignments(sess: requests.Session, course_id: str, include_unpublished: bool) -> List[Dict[str, Any]]:
@@ -62,29 +36,25 @@ def fetch_assignments(sess: requests.Session, course_id: str, include_unpublishe
     url = (f"{API_BASE}/courses/{course_id}/assignments"
            f"?per_page=100&include[]=submission&order_by=due_at")
     results: List[Dict[str, Any]] = []
-    while url:
-        r = sess.get(url, timeout=30)
-        if r.status_code in (401, 403):
-            sys.exit(f"Unauthorized ({r.status_code}). "
-                     "Check token, course access, or that the course isn’t concluded.")
-        if r.status_code == 404:
+    try:
+        for page in iter_paginated(sess, url):
+            if include_unpublished:
+                results.extend(page)
+            else:
+                for a in page:
+                    if not a.get("published", True):
+                        continue
+                    if a.get("locked_for_user", False):
+                        continue
+                    results.append(a)
+    except requests.HTTPError as e:
+        if getattr(e, "response", None) is not None and e.response.status_code in (401, 403):
+            sys.exit(
+                f"Unauthorized ({e.response.status_code}). Check token, course access, or that the course isn’t concluded."
+            )
+        if getattr(e, "response", None) is not None and e.response.status_code == 404:
             sys.exit("Course not found (404). Check course_id.")
-        r.raise_for_status()
-        page = r.json()
-        # Optionally filter to published/visible
-        if include_unpublished:
-            results.extend(page)
-        else:
-            for a in page:
-                if not a.get("published", True):
-                    continue
-                if a.get("locked_for_user", False):
-                    continue
-                results.append(a)
-
-        url = parse_links(r.headers.get("Link", "")).get("next")
-        if url:
-            time.sleep(0.1)
+        raise
     return results
 
 

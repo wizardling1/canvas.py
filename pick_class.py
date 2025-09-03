@@ -11,13 +11,15 @@ Usage:
   python3 pick_class.py --search math # filter by name/code
   python3 pick_class.py --set-id 123  # non-interactive, set course_id directly
 """
-import os, sys, json, re, time
+import sys, json
 from pathlib import Path
 import requests
+from canvascli.api import iter_paginated
 from typing import Dict, List, Optional
 from tabulate import tabulate
 
 API_BASE = "https://wsu.instructure.com/api/v1"
+from canvascli import utils as _cu
 
 # ---------- helpers ----------
 def load_config(cfg_path: Path) -> Dict:
@@ -33,34 +35,21 @@ def save_config(cfg_path: Path, cfg: Dict):
     tmp.write_text(json.dumps(cfg, indent=2, sort_keys=True))
     tmp.replace(cfg_path)
 
-def parse_links(header: str) -> Dict[str, str]:
-    links = {}
-    if not header:
-        return links
-    for part in header.split(","):
-        m = re.search(r'<([^>]+)>;\s*rel="([^"]+)"', part.strip())
-        if m:
-            links[m.group(2)] = m.group(1)
-    return links
-
 def get_courses(sess: requests.Session, include_all: bool, search: str | None) -> List[Dict]:
     params = {
         "per_page": 100,
         "include[]": ["term"],  # include term info
         "enrollment_state": "active" if not include_all else None,
-        # other handy flags you could add: "enrollment_type", "state[]", etc.
     }
     url = f"{API_BASE}/courses"
-    out = []
-    while url:
-        r = sess.get(url, params={k:v for k,v in params.items() if v is not None}, timeout=30)
-        if r.status_code in (401, 403):
-            sys.exit(f"Courses API unauthorized ({r.status_code}). Check your token.")
-        r.raise_for_status()
-        batch = r.json()
-        out.extend(batch)
-        url = parse_links(r.headers.get("Link", "")).get("next")
-        time.sleep(0.1)
+    out: List[Dict] = []
+    try:
+        for page in iter_paginated(sess, url, params={k: v for k, v in params.items() if v is not None}):
+            out.extend(page)
+    except requests.HTTPError as e:
+        if getattr(e, "response", None) is not None and e.response.status_code in (401, 403):
+            sys.exit(f"Courses API unauthorized ({e.response.status_code}). Check your token.")
+        raise
     # optional search filter (case-insensitive on name/code)
     if search:
         s = search.lower()

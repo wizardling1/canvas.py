@@ -10,41 +10,26 @@ import sys, json, time, re
 from pathlib import Path
 from typing import Optional, Dict, Iterable
 import requests
+from canvascli.api import iter_paginated
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 
 # ---- defaults (overridden in main() or fetch_pdfs_to) ----
 OUTDIR = Path("./downloads").resolve()
 
-
-def parse_links(h: Optional[str]) -> Dict[str, str]:
-    if not h:
-        return {}
-    links = {}
-    for part in h.split(","):
-        m = re.search(r'<([^>]+)>\s*;\s*rel="([^"]+)"', part.strip())
-        if m:
-            links[m.group(2)] = m.group(1)
-    return links
+from canvascli import utils as _cu
 
 
 def iter_module_file_ids(sess: requests.Session, course_id: str) -> Iterable[int]:
     """Yield file IDs from all course modules."""
     url = f"{API_BASE}/courses/{course_id}/modules?include[]=items&per_page=100"
-    while url:
-        r = sess.get(url, timeout=30)
-        if r.status_code in (401, 403, 404):
-            sys.exit(f"Modules API failed ({r.status_code}).")
-        r.raise_for_status()
-        for mod in r.json():
+    for page in iter_paginated(sess, url):
+        for mod in page:
             for item in (mod.get("items") or []):
                 if item.get("type") == "File":
                     fid = item.get("content_id")
                     if isinstance(fid, int):
                         yield fid
-        url = parse_links(r.headers.get("Link")).get("next")
-        if url:
-            time.sleep(0.15)
 
 
 def fetch_file_meta(sess: requests.Session, file_id: int) -> Optional[dict]:
@@ -62,13 +47,9 @@ def is_pdf(meta: dict) -> bool:
     return "pdf" in mime_class or ct == "application/pdf" or fname.endswith(".pdf")
 
 
-def safe_filename(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9 ._\-()]", "_", name).strip()
-
-
 def pick_output_path(display_name: str, file_id: int, used_names: Dict[str, int]) -> Path:
     """Ensure a stable filename; only add __id if duplicate names collide."""
-    base = safe_filename(display_name)
+    base = _cu.safe_filename(display_name)
     if not base.lower().endswith(".pdf"):
         base += ".pdf"
     if base in used_names and used_names[base] != file_id:

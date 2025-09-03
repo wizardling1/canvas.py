@@ -14,52 +14,19 @@ Relies on a canvas_config.json in the caller's current directory containing at m
 
 from __future__ import annotations
 
-import sys, json
+import sys
 from pathlib import Path
 from typing import Optional
 
 import requests
 
-# Local modules
-# Lazy-import helpers inside commands to avoid side effects on import
-
-API_BASE = "https://wsu.instructure.com/api/v1"
-
-
-def load_config_from_cwd_or_die() -> dict:
-    cfg_path = Path.cwd() / "canvas_config.json"
-    if not cfg_path.exists():
-        sys.exit(f"Missing canvas_config.json in {Path.cwd()} — create one with your Canvas token and course_id.")
-    try:
-        cfg = json.loads(cfg_path.read_text())
-    except json.JSONDecodeError as e:
-        sys.exit(f"Invalid JSON in {cfg_path}: {e}")
-    return cfg
-
-
-def assert_course_access(token: str, course_id: int) -> str:
-    """Return course name if accessible; otherwise exit with an error message."""
-    sess = requests.Session()
-    sess.headers.update({"Authorization": f"Bearer {token}"})
-    try:
-        r = sess.get(f"{API_BASE}/courses/{course_id}", timeout=20)
-    except requests.RequestException as e:
-        sys.exit(f"Failed to reach Canvas API: {e}")
-    if r.status_code in (401, 403):
-        sys.exit(f"Unauthorized to access course {course_id}. Check your Canvas token and permissions.")
-    if r.status_code == 404:
-        sys.exit(f"Course {course_id} not found. Check course_id in canvas_config.json.")
-    try:
-        r.raise_for_status()
-        data = r.json()
-    except Exception as e:
-        sys.exit(f"Unexpected response from Canvas: {e}")
-    name = data.get("name") or data.get("course_code") or "(unnamed course)"
-    return name
+from canvascli.config import load_config_from_cwd
+from canvascli.api import create_session, get_course_name
+from canvascli.utils import normalize_course_stem
 
 
 def cmd_status():
-    cfg = load_config_from_cwd_or_die()
+    cfg = load_config_from_cwd()
     token = cfg.get("token")
     cid = cfg.get("course_id")
 
@@ -68,7 +35,8 @@ def cmd_status():
         sys.exit("canvas_config.json must include 'token' and 'course_id'")
 
     # Validate access and show course
-    name = assert_course_access(str(token), int(cid))
+    sess = create_session(str(token))
+    name = get_course_name(sess, int(cid))
     print(f"- Current course: id={cid} — {name}")
 
     print("\nAvailable commands:")
@@ -91,17 +59,16 @@ def cmd_pick(argv: list[str]):
 
 
 def cmd_ls():
-    cfg = load_config_from_cwd_or_die()
+    cfg = load_config_from_cwd()
     token = cfg.get("token")
     cid = cfg.get("course_id")
     if not token or not cid:
         sys.exit("canvas_config.json must include 'token' and 'course_id'")
 
-    sess = requests.Session()
-    sess.headers.update({"Authorization": f"Bearer {token}"})
+    sess = create_session(str(token))
 
     # Validate access first
-    _ = assert_course_access(str(token), int(cid))
+    _ = get_course_name(sess, int(cid))
 
     # PDFs
     print("PDFs\n====")
@@ -118,37 +85,18 @@ def cmd_ls():
 
 
 def _normalize_course_stem(raw: str) -> str:
-    """Return a readable, filesystem-friendly stem like 'linear_algebra'.
-
-    Heuristics:
-    - If there's an em dash '—', use the part after it.
-    - Else if there are hyphens '-', use the part after the last hyphen if it contains letters.
-    - Fallback to the whole string.
-    - Lowercase, replace non-alphanumerics with spaces, collapse to underscores.
-    """
-    import re as _re
-    s = raw or "course"
-    if "—" in s:
-        s = s.split("—", 1)[1].strip()
-    elif "-" in s:
-        tail = s.rsplit("-", 1)[-1].strip()
-        if _re.search(r"[A-Za-z]", tail):
-            s = tail
-    # normalize
-    s = _re.sub(r"[^A-Za-z0-9]+", " ", s)
-    s = _re.sub(r"\s+", "_", s).strip("_").lower()
-    return s or "course"
+    # Backward compatibility shim; delegate to shared util
+    return normalize_course_stem(raw)
 
 
 def cmd_fetch(argv: list[str]):
-    cfg = load_config_from_cwd_or_die()
+    cfg = load_config_from_cwd()
     token = cfg.get("token")
     cid = cfg.get("course_id")
     if not token or not cid:
         sys.exit("canvas_config.json must include 'token' and 'course_id'")
 
-    sess = requests.Session()
-    sess.headers.update({"Authorization": f"Bearer {token}"})
+    sess = create_session(str(token))
 
     # Determine output directory (announce before any downloads/API fetches)
     outdir_arg: Optional[str] = None
@@ -160,7 +108,7 @@ def cmd_fetch(argv: list[str]):
     else:
         # Use course name based directory with _downloads suffix
         # We need course name; validate access to get it
-        cname = assert_course_access(str(token), int(cid))
+        cname = get_course_name(sess, int(cid))
         stem = _normalize_course_stem(cname)
         outdir = Path.cwd() / f"{stem}_downloads"
 
@@ -175,7 +123,7 @@ def cmd_fetch(argv: list[str]):
 
     # If we didn't already validate to derive the course name, validate now
     if outdir_arg:
-        _ = assert_course_access(str(token), int(cid))
+        _ = get_course_name(sess, int(cid))
 
     print("Fetching PDFs...")
     import fetch_pdfs as fp

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-import sys, re, json, time
+import sys, re, json
 from pathlib import Path
-from datetime import datetime
 import requests
 from tabulate import tabulate
 
@@ -9,30 +8,12 @@ API_BASE = "https://wsu.instructure.com/api/v1"
 
 # No config/session side effects at import time; standalone config handled in main().
 
+from canvascli.api import iter_paginated
+from canvascli.formatting import human_size, iso_to_local
+
 # ---------- helpers ----------
-def parse_links(header: str|None):
-    """Return dict(rel -> url) from Link header."""
-    links = {}
-    if not header:
-        return links
-    for part in header.split(","):
-        m = re.search(r'<([^>]+)>;\s*rel="([^"]+)"', part.strip())
-        if m:
-            links[m.group(2)] = m.group(1)
-    return links
-
-def human_size(n):
-    for unit in ["B","KB","MB","GB","TB"]:
-        if n < 1024.0:
-            return f"{n:.0f}{unit}" if unit=="B" else f"{n:.1f}{unit}"
-        n /= 1024.0
-    return f"{n:.1f}PB"
-
 def iso_dt(s):
-    try:
-        return datetime.fromisoformat(s.replace("Z","+00:00")).astimezone().strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        return s or ""
+    return iso_to_local(s)
 
 def is_pdf_name(name: str):
     return bool(re.search(r"\.pdf$", name or "", re.IGNORECASE))
@@ -41,21 +22,14 @@ def is_pdf_name(name: str):
 def iter_module_file_ids(sess: requests.Session, course_id: str):
     """Yield file IDs (and titles) referenced from modules (visible to students)."""
     url = f"{API_BASE}/courses/{course_id}/modules?include[]=items&per_page=100"
-    while url:
-        r = sess.get(url, timeout=30)
-        if r.status_code in (401,403):
-            # Modules might be hidden; just stop quietly
-            return
-        r.raise_for_status()
-        for mod in r.json():
+    for page in iter_paginated(sess, url, stop_status=(401, 403)):
+        for mod in page:
             for it in (mod.get("items") or []):
                 if it.get("type") == "File":
                     fid = it.get("content_id")
                     title = it.get("title") or ""
                     if fid:
                         yield int(fid), title
-        url = parse_links(r.headers.get("Link")).get("next")
-        time.sleep(0.1)
 
 def get_file_meta(sess: requests.Session, file_id: int):
     r = sess.get(f"{API_BASE}/files/{file_id}", timeout=30)
@@ -71,15 +45,9 @@ def iter_course_pdfs_files_api(sess: requests.Session, course_id: str):
     """
     url = (f"{API_BASE}/courses/{course_id}/files"
            f"?content_types[]=application/pdf&per_page=100&sort=updated_at&order=desc")
-    while url:
-        r = sess.get(url, timeout=30)
-        if r.status_code in (401,403):
-            return  # not permitted
-        r.raise_for_status()
-        for f in r.json():
+    for page in iter_paginated(sess, url, stop_status=(401, 403)):
+        for f in page:
             yield f
-        url = parse_links(r.headers.get("Link")).get("next")
-        time.sleep(0.1)
 
 # ---------- main ----------
 def collect_pdfs(sess: requests.Session, course_id: str):

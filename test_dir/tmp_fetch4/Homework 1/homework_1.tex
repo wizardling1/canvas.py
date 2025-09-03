@@ -1,0 +1,69 @@
+\documentclass[12pt]{article}
+\usepackage{fullpage, graphicx, amssymb, amsmath, amsthm, amsfonts, multirow, enumerate, multicol, calc, thmtools, mathrsfs}
+\usepackage{tikz}
+\usepackage{fancyhdr}
+\usepackage{subcaption}
+\usepackage{nicematrix}
+
+\newtheorem{thm}{Theorem}[section]
+\newtheorem{lem}[thm]{Lemma}
+\newtheorem{cor}[thm]{Corollary}
+\newtheorem{prop}[thm]{Proposition}
+\newtheorem{conj}[thm]{Conjecture}
+\newtheorem{prob}[thm]{Problem}
+\newtheorem{obs}[thm]{Observation}
+\newtheorem{ques}[thm]{Question}
+\newtheorem{mydef}[thm]{Definition}
+\newtheorem{example}[thm]{Example}
+
+\title{\vspace{-2.5cm}Math 420: Homework 1}
+\author{Name:}
+\date{September 3, 2025}
+
+\begin{document}
+
+\maketitle
+
+\begin{enumerate}
+    \item For any square matrix $A$ and any integer $k \geq 4$, prove the identity 
+    \[
+    A^k - I = (A-I)(A^{k-1} + A^{k-2} + \dots + A + I).
+    \]
+
+    \vspace{5cm}
+
+    \item Let $A$ be a $3\times 3$ matrix that commutes with all $3\times 3$ matrices. Prove that $A$ is a scalar multiple of the identity matrix.
+
+    \newpage
+
+    \item Prove that the set $V = \{(x,y,z) \in \mathbb{R}^3 : z = 3x \text{ and } y=2z\}$ is a vector space. 
+
+    \vspace{7cm}
+
+    \item Show that the following are not vector spaces 
+    \begin{enumerate}
+        \item $V = \{(x,y,z) \in \mathbb{R}^3 : z = xy\}$
+
+        \vspace{3cm}
+    
+        \item $V = \{(x,y,z) \in \mathbb{Z}^3 : z = x+y\}$
+
+        \vspace{3cm}
+
+        \item $V$ is the set of $3 \times 3$ matrices with real coefficients where vector addition is defined to be matrix multiplication.
+    \end{enumerate}
+
+    \newpage
+
+    \item Explain how $\mathbb{C}^n$ can be thought of as a vector space over $\mathbb{R}$. How many real numbers would be needed for this vector space?
+
+    \vspace{6cm}
+
+    \item Let $V$ be a vector space with subspaces $U$ and $W$. Prove that 
+    \[
+        U \cup W = \{v \in V : v \in U \text{ or } v \in W\}
+    \]
+    is a subspace of $V$ if and only if either $U \leq W$ or $W \leq U$.
+\end{enumerate}
+
+\end{document}

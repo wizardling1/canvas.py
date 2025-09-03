@@ -1,38 +1,40 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root scripts: `canvas.py` (CLI entry), `pick_class.py`, `list_pdfs.py`, `list_assignments.py`, `fetch_pdfs.py`, `fetch_assignments.py`, `zoom.py`.
-- Config: `canvas_config.json` is read from the current working directory (for most commands) and should contain `{ "token": "…", "course_id": 123 }`.
-- Downloads: saved under `./downloads/` or an auto-named `<course>_downloads/` directory.
+- Root CLI: `canvas.py` (entry), plus `pick_class.py`, `list_pdfs.py`, `list_assignments.py`, `fetch_pdfs.py`, `fetch_assignments.py`, `zoom.py`.
+- Shared package: `canvascli/` with `api.py` (auth, `iter_paginated`), `config.py` (config loader), `utils.py` (links, names), `formatting.py` (sizes, dates).
+- Config: `canvas_config.json` in the current working directory `{ "token": "…", "course_id": 123 }`.
+- Downloads: `./downloads/` or auto-named `<course>_downloads/`.
+- Tests: `tests/` (e.g., `tests/test_list_assignments.py`).
 
-## Setup, Run, and Dev Commands
-- Create venv: `python3 -m venv .venv && source .venv/bin/activate`
-- Install deps: `pip install -U requests tabulate playwright browser_cookie3`
-- Playwright browsers (for `zoom.py`): `python -m playwright install`
-- Quick status: `python canvas.py`
-- Pick course: `python canvas.py pick --search math`
-- List: `python canvas.py ls`
-- Fetch files: `python canvas.py fetch ./my_course_downloads`
+## Build, Test, and Development Commands
+- Create venv: `python3 -m venv .venv && source .venv/bin/activate`.
+- Install deps: `pip install -U requests tabulate playwright browser_cookie3`.
+- Playwright (for `zoom.py`): `python -m playwright install`.
+- Status: `python canvas.py`.
+- Pick course: `python canvas.py pick --search math`.
+- List: `python canvas.py ls`.
+- Fetch: `python canvas.py fetch ./my_course_downloads`.
 - Standalone: `python list_assignments.py --format table`, `python list_pdfs.py`, `python fetch_pdfs.py`.
+- Tests: `pytest -q`.
 
 ## Coding Style & Naming Conventions
-- Python 3.10+; PEP 8; 4-space indentation; prefer type hints and small, focused functions.
-- Filenames and functions: `snake_case`; modules are task-oriented verbs (e.g., `fetch_*.py`, `list_*.py`).
-- HTTP: reuse a `requests.Session` and respect timeouts; avoid global state where possible.
+- Python 3.10+; PEP 8; 4-space indentation; prefer type hints and small functions.
+- Names: `snake_case`; modules are task-oriented verbs (`fetch_*`, `list_*`).
+- HTTP: reuse one `requests.Session`, set timeouts, and paginate via `canvascli.api.iter_paginated`.
 
 ## Testing Guidelines
-- Framework: `pytest` (add as needed). Place tests under `tests/`, e.g., `tests/test_list_assignments.py`.
-- Use `requests-mock` or `responses` to avoid live Canvas calls; never embed real tokens.
-- Name tests `test_*` and cover pagination, filtering, and error handling. Target ≥80% for changed code.
-- Run: `pytest -q` (add `pytest` to dev requirements).
+- Framework: `pytest`; stub HTTP with `responses` or `requests-mock`.
+- Tests under `tests/`, named `test_*.py`; cover pagination, filtering, and error handling.
+- Target ≥80% coverage for changed code. Run with `pytest -q`.
+- Never embed real tokens or commit configs.
 
 ## Commit & Pull Request Guidelines
-- Commits: imperative mood, concise subject (≤50 chars), body for rationale and side effects.
-- Reference issues with `Fixes #123` when relevant. Group related changes.
-- PRs: include summary, reproduction steps, before/after output (tables or logs), and any config notes.
+- Commits: imperative subject (≤50 chars), concise body explaining rationale/side effects. Example: `Refactor to shared iter_paginated`.
+- Link issues (e.g., `Fixes #123`) and group related changes.
+- PRs: include summary, repro steps, before/after output, and config notes.
 
 ## Security & Configuration Tips
-- Never commit `canvas_config.json` or tokens. Add to `.gitignore` locally.
-- Prefer environment variables for local experiments: e.g., read `CANVAS_TOKEN` when present.
-- Be mindful of API rate limits; keep polite delays (already present) and efficient pagination.
-
+- Do not commit `canvas_config.json` or tokens; keep them local/ignored.
+- Prefer `CANVAS_TOKEN` for local runs; file config is a fallback.
+- Respect API rate limits; polite delays are already built into pagination.

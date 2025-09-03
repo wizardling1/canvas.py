@@ -14,26 +14,16 @@ Note: Import-safe. No config reads at import time.
 import json
 import re
 import sys
-import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
 
 import requests
+from canvascli.api import iter_paginated
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 OUTROOT = Path("./downloads")
+from canvascli import utils as _cu
 
-
-def parse_links(h: Optional[str]) -> Dict[str, str]:
-    """Parse Canvas Link header -> dict(rel->url)."""
-    out: Dict[str, str] = {}
-    if not h:
-        return out
-    for part in h.split(","):
-        m = re.search(r'<([^>]+)>;\s*rel="([^"]+)"', part.strip())
-        if m:
-            out[m.group(2)] = m.group(1)
-    return out
 
 
 def slugify(name: str) -> str:
@@ -43,35 +33,18 @@ def slugify(name: str) -> str:
 
 
 def iter_assignments(sess: requests.Session, course_id: str) -> Iterable[dict]:
-    """Yield all assignments (with description). Loop-guard prevents bad pagination loops."""
-    # include[]=description ensures we can scan links; per_page=100 reduces pages
+    """Yield all assignments (with description)."""
     url = f"{API_BASE}/courses/{course_id}/assignments?per_page=100&include[]=description"
-    seen: Set[str] = set()
-    pages = 0
-    while url:
-        if url in seen:
-            print(f"[warn] Pagination loop detected; stopping at {url}")
-            break
-        seen.add(url)
-        pages += 1
-        if pages > 200:
-            print("[warn] Too many pages, aborting pagination.")
-            break
-
-        r = sess.get(url, timeout=30)
-        if r.status_code in (401, 403):
-            sys.exit(f"Assignments API unauthorized ({r.status_code}). "
-                     "Check token and course access.")
-        r.raise_for_status()
-        data = r.json()
-        if not isinstance(data, list):
-            sys.exit(f"Unexpected response from assignments API: {str(data)[:200]}")
-
-        for a in data:
-            yield a
-
-        url = parse_links(r.headers.get("Link")).get("next")
-        time.sleep(0.1)
+    try:
+        for page in iter_paginated(sess, url):
+            if not isinstance(page, list):
+                sys.exit(f"Unexpected response from assignments API: {str(page)[:200]}")
+            for a in page:
+                yield a
+    except requests.HTTPError as e:
+        if getattr(e, "response", None) is not None and e.response.status_code in (401, 403):
+            sys.exit(f"Assignments API unauthorized ({e.response.status_code}). Check token and course access.")
+        raise
 
 
 FILE_LINK_RE = re.compile(

@@ -1,0 +1,57 @@
+\documentclass[12pt]{article}
+\usepackage{fullpage, graphicx, amssymb, amsmath, amsthm, amsfonts, multirow, enumerate, multicol, calc, thmtools, mathrsfs}
+\usepackage{tikz}
+\usepackage{fancyhdr}
+\usepackage{subcaption}
+\usepackage{nicematrix}
+
+\newtheorem{thm}{Theorem}[section]
+\newtheorem{lem}[thm]{Lemma}
+\newtheorem{cor}[thm]{Corollary}
+\newtheorem{prop}[thm]{Proposition}
+\newtheorem{conj}[thm]{Conjecture}
+\newtheorem{prob}[thm]{Problem}
+\newtheorem{obs}[thm]{Observation}
+\newtheorem{ques}[thm]{Question}
+\newtheorem{mydef}[thm]{Definition}
+\newtheorem{example}[thm]{Example}
+
+\title{\vspace{-2.5cm}Math 420: Homework 2}
+\author{Name:}
+\date{September 10, 2025}
+
+\begin{document}
+
+\maketitle
+
+\begin{enumerate}
+    \item Prove that 
+    \[
+    \det \left( \begin{bmatrix}
+        1 & 2 & 2 & \dots & 2 & 2 \\
+        2 & 2 & 2 & \dots & 2 & 2 \\
+        2 & 2 & 3 & \dots & 2 & 2 \\
+        \vdots & \vdots & \vdots & \ddots & 2 & 2 \\
+        2 & 2 & 2 & \dots & n-1 & 2 \\
+        2 & 2 & 2 & \dots & 2 & n
+    \end{bmatrix} \right) = -2(n-2)!.
+    \]
+
+    \newpage
+    \item Let $U_1, U_2, U_3$ be subspaces to a finite dimensional vector space $V$. Show that 
+    \[
+    \dim ( U_1 \cap U_2 \cap U_3) \geq \dim (U_1) + \dim(U_2) + \dim(U_3) - 2\dim(V).
+    \]
+
+    \newpage
+    \item Let $V = \text{span}\{AB-BA : A, B \in \mathsf{M}_n(\mathbb{R})\}$.
+    \begin{enumerate}
+        \item Show that the function $\text{tr}:\mathsf{M}_n(\mathbb{R}) \rightarrow \mathbb{R}$ is a linear transformation.
+
+        \item Prove that $\dim \ker \text{tr} = n^2  -1$.
+
+        \item Prove that $\dim V = n^2 -1$.
+    \end{enumerate}
+\end{enumerate}
+
+\end{document}
