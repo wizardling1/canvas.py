@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+import sys, re, json, time
+from pathlib import Path
+from datetime import datetime
+import requests
+from tabulate import tabulate
+
+API_BASE = "https://wsu.instructure.com/api/v1"
+
+# ---------- config ----------
+cfg_path = Path(__file__).with_name("canvas_config.json")
+if not cfg_path.exists():
+    sys.exit(f"Missing {cfg_path}. Example:\n{{\"token\":\"...\",\"course_id\":1864601}}")
+
+try:
+    config = json.loads(cfg_path.read_text())
+except json.JSONDecodeError as e:
+    sys.exit(f"Invalid JSON in {cfg_path}: {e}")
+
+token = config.get("token")
+course_id = config.get("course_id")
+if not token or not course_id:
+    sys.exit("canvas_config.json must include 'token' and 'course_id'")
+
+course_id = str(course_id)
+
+# ---------- session ----------
+sess = requests.Session()
+sess.headers.update({"Authorization": f"Bearer {token}"})
+
+# ---------- helpers ----------
+def parse_links(header: str|None):
+    """Return dict(rel -> url) from Link header."""
+    links = {}
+    if not header:
+        return links
+    for part in header.split(","):
+        m = re.search(r'<([^>]+)>;\s*rel="([^"]+)"', part.strip())
+        if m:
+            links[m.group(2)] = m.group(1)
+    return links
+
+def human_size(n):
+    for unit in ["B","KB","MB","GB","TB"]:
+        if n < 1024.0:
+            return f"{n:.0f}{unit}" if unit=="B" else f"{n:.1f}{unit}"
+        n /= 1024.0
+    return f"{n:.1f}PB"
+
+def iso_dt(s):
+    try:
+        return datetime.fromisoformat(s.replace("Z","+00:00")).astimezone().strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return s or ""
+
+def is_pdf_name(name: str):
+    return bool(re.search(r"\.pdf$", name or "", re.IGNORECASE))
+
+# ---------- collectors ----------
+def iter_module_file_ids(sess: requests.Session, course_id: str):
+    """Yield file IDs (and titles) referenced from modules (visible to students)."""
+    url = f"{API_BASE}/courses/{course_id}/modules?include[]=items&per_page=100"
+    while url:
+        r = sess.get(url, timeout=30)
+        if r.status_code in (401,403):
+            # Modules might be hidden; just stop quietly
+            return
+        r.raise_for_status()
+        for mod in r.json():
+            for it in (mod.get("items") or []):
+                if it.get("type") == "File":
+                    fid = it.get("content_id")
+                    title = it.get("title") or ""
+                    if fid:
+                        yield int(fid), title
+        url = parse_links(r.headers.get("Link")).get("next")
+        time.sleep(0.1)
+
+def get_file_meta(sess: requests.Session, file_id: int):
+    r = sess.get(f"{API_BASE}/files/{file_id}", timeout=30)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json()
+
+def iter_course_pdfs_files_api(sess: requests.Session, course_id: str):
+    """
+    Query the course Files endpoint for PDFs directly.
+    This may 403 for students depending on course settings.
+    """
+    url = (f"{API_BASE}/courses/{course_id}/files"
+           f"?content_types[]=application/pdf&per_page=100&sort=updated_at&order=desc")
+    while url:
+        r = sess.get(url, timeout=30)
+        if r.status_code in (401,403):
+            return  # not permitted
+        r.raise_for_status()
+        for f in r.json():
+            yield f
+        url = parse_links(r.headers.get("Link")).get("next")
+        time.sleep(0.1)
+
+# ---------- main ----------
+def collect_pdfs(sess: requests.Session, course_id: str):
+    """Return a list of PDF rows for the given course_id using the provided session."""
+    seen = {}
+    rows = []
+
+    # 1) Files referenced from Modules (often student-visible)
+    for fid, title in iter_module_file_ids(sess, course_id):
+        meta = get_file_meta(sess, fid)
+        if not meta:
+            continue
+        name = meta.get("display_name") or meta.get("filename") or title
+        if not (is_pdf_name(name) or (meta.get("mime_class") == "pdf")):
+            continue
+        dl = meta.get("download_url") or meta.get("url")  # both are signed
+        rows.append({
+            "id": meta.get("id"),
+            "name": name,
+            "size": meta.get("size") or 0,
+            "updated_at": meta.get("updated_at") or meta.get("modified_at"),
+            "download_url": dl,
+            "source": "modules"
+        })
+        seen[meta["id"]] = True
+
+    # 2) (Best effort) Files area (may be forbidden to students)
+    for f in iter_course_pdfs_files_api(sess, course_id):
+        fid = f.get("id")
+        if not fid or fid in seen:
+            continue
+        name = f.get("display_name") or f.get("filename") or ""
+        if not (is_pdf_name(name) or f.get("mime_class") == "pdf"):
+            continue
+        dl = f.get("download_url") or f.get("url")
+        rows.append({
+            "id": fid,
+            "name": name,
+            "size": f.get("size") or 0,
+            "updated_at": f.get("updated_at") or f.get("modified_at"),
+            "download_url": dl,
+            "source": "files"
+        })
+        seen[fid] = True
+
+    # Sort newest first
+    rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
+    return rows
+
+
+def print_pdfs_table(rows):
+    if not rows:
+        print("No PDFs found (or not visible with your account/permissions).")
+        print("Tip: instructors often publish PDFs through Modules; if Modules are unpublished,")
+        print("they won’t show up. You can still download by known file_id via /api/v1/files/{id}.")
+        return
+
+    print(f"Found {len(rows)} PDF(s):\n")
+    headers = ["ID", "Name", "Size", "Updated", "Src"]
+    data = []
+    for r in rows:
+        data.append([
+            r.get("id"),
+            r.get("name"),
+            human_size(int(r.get("size") or 0)),
+            iso_dt(r.get("updated_at")),
+            r.get("source"),
+        ])
+    print(tabulate(data, headers=headers, tablefmt="github", disable_numparse=True))
+    print()
+    for r in rows:
+        if r.get("download_url"):
+            print(f"- {r['name']}: {r['download_url']}")
+    print()
+
+
+def main():
+    rows = collect_pdfs(sess, course_id)
+    print_pdfs_table(rows)
+
+if __name__ == "__main__":
+    try:
+        main()
+    except requests.HTTPError as e:
+        resp = getattr(e, "response", None)
+        detail = f" ({resp.status_code})" if resp is not None else ""
+        print(f"HTTP error{detail}: {e}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)
