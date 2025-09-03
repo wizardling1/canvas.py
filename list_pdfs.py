@@ -7,26 +7,7 @@ from tabulate import tabulate
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 
-# ---------- config ----------
-cfg_path = Path(__file__).with_name("canvas_config.json")
-if not cfg_path.exists():
-    sys.exit(f"Missing {cfg_path}. Example:\n{{\"token\":\"...\",\"course_id\":1864601}}")
-
-try:
-    config = json.loads(cfg_path.read_text())
-except json.JSONDecodeError as e:
-    sys.exit(f"Invalid JSON in {cfg_path}: {e}")
-
-token = config.get("token")
-course_id = config.get("course_id")
-if not token or not course_id:
-    sys.exit("canvas_config.json must include 'token' and 'course_id'")
-
-course_id = str(course_id)
-
-# ---------- session ----------
-sess = requests.Session()
-sess.headers.update({"Authorization": f"Bearer {token}"})
+# No config/session side effects at import time; standalone config handled in main().
 
 # ---------- helpers ----------
 def parse_links(header: str|None):
@@ -176,6 +157,26 @@ def print_pdfs_table(rows):
 
 
 def main():
+    # Standalone execution: read config next to this script
+    cfg_path = Path(__file__).with_name("canvas_config.json")
+    if not cfg_path.exists():
+        sys.exit(f"Missing {cfg_path}. Example:\n{{\"token\":\"...\",\"course_id\":1864601}}")
+
+    try:
+        config = json.loads(cfg_path.read_text())
+    except json.JSONDecodeError as e:
+        sys.exit(f"Invalid JSON in {cfg_path}: {e}")
+
+    token = config.get("token")
+    course_id = config.get("course_id")
+    if not token or not course_id:
+        sys.exit("canvas_config.json must include 'token' and 'course_id'")
+
+    course_id = str(course_id)
+
+    sess = requests.Session()
+    sess.headers.update({"Authorization": f"Bearer {token}"})
+
     rows = collect_pdfs(sess, course_id)
     print_pdfs_table(rows)
 

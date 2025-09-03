@@ -26,25 +26,7 @@ from tabulate import tabulate
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 
-# ---------- config ----------
-cfg_path = Path(__file__).with_name("canvas_config.json")
-if not cfg_path.exists():
-    sys.exit(f"Missing canvas_config.json. Please create {cfg_path}")
-
-try:
-    config = json.loads(cfg_path.read_text())
-except json.JSONDecodeError as e:
-    sys.exit(f"Invalid canvas_config.json: {e}")
-
-TOKEN = config.get("token")
-COURSE_ID = str(config.get("course_id") or "")
-
-if not TOKEN or not COURSE_ID:
-    sys.exit("canvas_config.json must include 'token' and 'course_id'")
-
-# ---------- HTTP session ----------
-sess = requests.Session()
-sess.headers.update({"Authorization": f"Bearer {TOKEN}"})
+# Note: keep module import-safe; no config or session setup at import time.
 
 
 def parse_links(h: str) -> Dict[str, str]:
@@ -184,7 +166,24 @@ def main():
                     help="Include unpublished/locked assignments")
     args = ap.parse_args()
 
-    assignments = fetch_assignments(sess, COURSE_ID, include_unpublished=args.all)
+    cfg_path = Path(__file__).with_name("canvas_config.json")
+    if not cfg_path.exists():
+        sys.exit(f"Missing canvas_config.json. Please create {cfg_path}")
+
+    try:
+        config = json.loads(cfg_path.read_text())
+    except json.JSONDecodeError as e:
+        sys.exit(f"Invalid canvas_config.json: {e}")
+
+    token = config.get("token")
+    course_id = str(config.get("course_id") or "")
+    if not token or not course_id:
+        sys.exit("canvas_config.json must include 'token' and 'course_id'")
+
+    sess = requests.Session()
+    sess.headers.update({"Authorization": f"Bearer {token}"})
+
+    assignments = fetch_assignments(sess, course_id, include_unpublished=args.all)
     rows = [row_from_assignment(a) for a in assignments]
 
     if args.format == "json":

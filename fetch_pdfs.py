@@ -3,6 +3,7 @@
 Download all available PDFs from a Canvas course (via Modules) into OUTDIR.
 
 Uses ETag to avoid re-downloading unchanged files.
+Note: This module is import-safe (no config reads at import time).
 """
 
 import sys, json, time, re
@@ -12,28 +13,8 @@ import requests
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 
-# ---- load config ----
-cfg_path = Path(__file__).with_name("canvas_config.json")
-if not cfg_path.exists():
-    sys.exit(f"Missing canvas_config.json. Please create {cfg_path}")
-
-try:
-    config = json.loads(cfg_path.read_text())
-except json.JSONDecodeError as e:
-    sys.exit(f"Invalid canvas_config.json: {e}")
-
-TOKEN = config.get("token")
-COURSE_ID = str(config.get("course_id") or "")
-OUTDIR = Path(config.get("outdir", "./downloads")).resolve()
-
-if not TOKEN or not COURSE_ID:
-    sys.exit("canvas_config.json must include 'token' and 'course_id'")
-
-OUTDIR.mkdir(parents=True, exist_ok=True)
-
-# ---- HTTP session ----
-sess = requests.Session()
-sess.headers.update({"Authorization": f"Bearer {TOKEN}"})
+# ---- defaults (overridden in main() or fetch_pdfs_to) ----
+OUTDIR = Path("./downloads").resolve()
 
 
 def parse_links(h: Optional[str]) -> Dict[str, str]:
@@ -170,9 +151,31 @@ def fetch_pdfs_to(sess: requests.Session, course_id: str, outdir: Path) -> int:
 
 
 def main():
-    n = fetch_pdfs_to(sess, COURSE_ID, OUTDIR)
+    # Standalone execution: read config next to this script
+    cfg_path = Path(__file__).with_name("canvas_config.json")
+    if not cfg_path.exists():
+        sys.exit(f"Missing canvas_config.json. Please create {cfg_path}")
+
+    try:
+        config = json.loads(cfg_path.read_text())
+    except json.JSONDecodeError as e:
+        sys.exit(f"Invalid canvas_config.json: {e}")
+
+    token = config.get("token")
+    course_id = str(config.get("course_id") or "")
+    outdir = Path(config.get("outdir", "./downloads")).resolve()
+
+    if not token or not course_id:
+        sys.exit("canvas_config.json must include 'token' and 'course_id'")
+
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    sess = requests.Session()
+    sess.headers.update({"Authorization": f"Bearer {token}"})
+
+    n = fetch_pdfs_to(sess, course_id, outdir)
     if n:
-        print(f"\nDone. PDFs found: {n}. Saved to {OUTDIR}")
+        print(f"\nDone. PDFs found: {n}. Saved to {outdir}")
 
 
 if __name__ == "__main__":

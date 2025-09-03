@@ -2,14 +2,13 @@
 """
 Download all homework-related attachments/linked files from a Canvas course.
 
-- Reads token & course_id from canvas_config.json (sibling to this script)
 - Creates downloads/<Assignment Name>/ and saves each file there
 - Uses per-file ETag sidecars (*.etag) to avoid re-downloading
 - Collects files from:
     1) assignment["attachments"] (when present)
     2) any <a href=".../files/<id>/..."> links in assignment["description"]
 
-Requires: requests
+Note: Import-safe. No config reads at import time.
 """
 
 import json
@@ -23,24 +22,6 @@ import requests
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 OUTROOT = Path("./downloads")
-
-# ---------- config ----------
-cfg_path = Path(__file__).with_name("canvas_config.json")
-if not cfg_path.exists():
-    sys.exit(f"Missing config.json. Create {cfg_path} with {{\"token\":\"...\",\"course_id\":123}}")
-try:
-    cfg = json.loads(cfg_path.read_text())
-except json.JSONDecodeError as e:
-    sys.exit(f"Invalid JSON in canvas_config.json: {e}")
-
-TOKEN = cfg.get("token")
-COURSE_ID = str(cfg.get("course_id") or "")
-if not TOKEN or not COURSE_ID:
-    sys.exit("canvas_config.json must include 'token' and 'course_id'")
-
-# ---------- http ----------
-sess = requests.Session()
-sess.headers.update({"Authorization": f"Bearer {TOKEN}"})
 
 
 def parse_links(h: Optional[str]) -> Dict[str, str]:
@@ -106,7 +87,7 @@ def extract_file_ids_from_description(html: Optional[str]) -> List[int]:
     return sorted(ids)
 
 
-def get_file_meta(file_id: int) -> dict:
+def get_file_meta(sess: requests.Session, file_id: int) -> dict:
     r = sess.get(f"{API_BASE}/files/{file_id}", timeout=30)
     r.raise_for_status()
     return r.json()
@@ -144,7 +125,24 @@ def conditional_download(sess: requests.Session, url: str, out_path: Path) -> No
 
 
 def main():
-    fetch_assignment_files(sess, COURSE_ID, OUTROOT)
+    # Standalone execution: read config next to this script
+    cfg_path = Path(__file__).with_name("canvas_config.json")
+    if not cfg_path.exists():
+        sys.exit(f"Missing config.json. Create {cfg_path} with {{\"token\":\"...\",\"course_id\":123}}")
+    try:
+        cfg = json.loads(cfg_path.read_text())
+    except json.JSONDecodeError as e:
+        sys.exit(f"Invalid JSON in canvas_config.json: {e}")
+
+    token = cfg.get("token")
+    course_id = str(cfg.get("course_id") or "")
+    if not token or not course_id:
+        sys.exit("canvas_config.json must include 'token' and 'course_id'")
+
+    sess = requests.Session()
+    sess.headers.update({"Authorization": f"Bearer {token}"})
+
+    fetch_assignment_files(sess, course_id, OUTROOT)
 
 
 def fetch_assignment_files(sess: requests.Session, course_id: str, outroot: Path) -> None:
@@ -179,7 +177,7 @@ def fetch_assignment_files(sess: requests.Session, course_id: str, outroot: Path
         print(f"\n== {name} ==")
         for fid in sorted(file_ids):
             try:
-                meta = get_file_meta(fid)
+                meta = get_file_meta(sess, fid)
             except Exception as e:
                 print(f"  Skipping file {fid}: cannot read metadata ({e})")
                 continue

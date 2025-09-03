@@ -21,11 +21,7 @@ from typing import Optional
 import requests
 
 # Local modules
-import pick_class as pick_class
-import list_pdfs as lp
-import list_assignments as la
-import fetch_pdfs as fp
-import fetch_assignments as fa
+# Lazy-import helpers inside commands to avoid side effects on import
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 
@@ -90,7 +86,7 @@ def cmd_pick(argv: list[str]):
     ap.add_argument("--search", help="Filter by name or code (case-insensitive)")
     ap.add_argument("--set-id", type=int, help="Non-interactive: set course_id directly and exit")
     args = ap.parse_args(argv)
-
+    import pick_class as pick_class
     pick_class.run(include_all=args.all, search=args.search, set_id=args.set_id)
 
 
@@ -109,11 +105,13 @@ def cmd_ls():
 
     # PDFs
     print("PDFs\n====")
+    import list_pdfs as lp
     pdf_rows = lp.collect_pdfs(sess, str(cid))
     lp.print_pdfs_table(pdf_rows)
 
     # Assignments
     print("Assignments\n===========")
+    import list_assignments as la
     assigns = la.fetch_assignments(sess, str(cid), include_unpublished=False)
     assign_rows = [la.row_from_assignment(a) for a in assigns]
     la.print_table(assign_rows)
@@ -152,10 +150,7 @@ def cmd_fetch(argv: list[str]):
     sess = requests.Session()
     sess.headers.update({"Authorization": f"Bearer {token}"})
 
-    # Validate access and get course name
-    cname = assert_course_access(str(token), int(cid))
-
-    # Determine output directory
+    # Determine output directory (announce before any downloads/API fetches)
     outdir_arg: Optional[str] = None
     if argv:
         # Treat first positional as desired output directory
@@ -164,15 +159,31 @@ def cmd_fetch(argv: list[str]):
         outdir = Path(outdir_arg).expanduser().resolve()
     else:
         # Use course name based directory with _downloads suffix
+        # We need course name; validate access to get it
+        cname = assert_course_access(str(token), int(cid))
         stem = _normalize_course_stem(cname)
         outdir = Path.cwd() / f"{stem}_downloads"
-    outdir.mkdir(parents=True, exist_ok=True)
+
+    # Inform about output directory state and ensure it exists
+    if outdir.exists():
+        print(f"Output directory exists: {outdir}")
+    else:
+        print(f"Creating output directory: {outdir}")
+        outdir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Saving to: {outdir}")
+
+    # If we didn't already validate to derive the course name, validate now
+    if outdir_arg:
+        _ = assert_course_access(str(token), int(cid))
 
     print("Fetching PDFs...")
+    import fetch_pdfs as fp
     pdf_count = fp.fetch_pdfs_to(sess, str(cid), outdir)
     print(f"PDFs downloaded: {pdf_count}")
 
     print("\nFetching assignment attachments and linked files...")
+    import fetch_assignments as fa
     fa.fetch_assignment_files(sess, str(cid), outdir)
     print("\nDone.")
 
