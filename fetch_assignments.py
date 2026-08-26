@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
 
 import requests
-from canvascli.api import iter_paginated
+from canvasapi import iter_paginated
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 OUTROOT = Path("./downloads")

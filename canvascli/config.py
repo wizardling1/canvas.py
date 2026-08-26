@@ -9,6 +9,7 @@ from typing import TypedDict, Optional
 class CanvasConfig(TypedDict, total=False):
     token: str
     course_id: int
+    base_url: str
 
 
 def load_config_from_cwd(path: Optional[Path] = None) -> CanvasConfig:
@@ -35,3 +36,11 @@ def load_config_from_cwd(path: Optional[Path] = None) -> CanvasConfig:
 
     return cfg
 
+
+def save_config(config: CanvasConfig, path: Optional[Path] = None) -> Path:
+    """Atomically save CLI-owned configuration in the current directory."""
+    cfg_path = (path or Path.cwd()) / "canvas_config.json"
+    temporary = cfg_path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
+    temporary.replace(cfg_path)
+    return cfg_path

@@ -10,7 +10,7 @@ import sys, json, time, re
 from pathlib import Path
 from typing import Optional, Dict, Iterable
 import requests
-from canvascli.api import iter_paginated
+from canvasapi import iter_paginated
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 

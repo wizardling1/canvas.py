@@ -1,0 +1,5 @@
+{
+  "base_url": "https://canvas.example.edu",
+  "course_id": 123456,
+  "token": "replace-with-a-local-test-token"
+}

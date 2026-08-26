@@ -14,7 +14,7 @@ Usage:
 import sys, json
 from pathlib import Path
 import requests
-from canvascli.api import iter_paginated
+from canvasapi import iter_paginated
 from typing import Dict, List, Optional
 from tabulate import tabulate
 

@@ -28,7 +28,7 @@ API_BASE = "https://wsu.instructure.com/api/v1"
 # Note: keep module import-safe; no config or session setup at import time.
 
 from canvascli.formatting import iso_to_local
-from canvascli.api import iter_paginated
+from canvasapi import iter_paginated
 
 
 def fetch_assignments(sess: requests.Session, course_id: str, include_unpublished: bool) -> List[Dict[str, Any]]:

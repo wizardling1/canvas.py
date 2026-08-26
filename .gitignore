@@ -1,1 +1,11 @@
 __pycache__
+.pytest_cache/
+.venv/
+*.py[cod]
+*.part
+courses/
+canvas_config.json
+canvascontext.toml
+test_dir/
+tmp_fetch*/
+*_downloads/

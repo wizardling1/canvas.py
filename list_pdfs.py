@@ -8,7 +8,7 @@ API_BASE = "https://wsu.instructure.com/api/v1"
 
 # No config/session side effects at import time; standalone config handled in main().
 
-from canvascli.api import iter_paginated
+from canvasapi import iter_paginated
 from canvascli.formatting import human_size, iso_to_local
 
 # ---------- helpers ----------
