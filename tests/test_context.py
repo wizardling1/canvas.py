@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from canvascontext.commands import _parser
 from canvascontext.config import load_config
 from canvascontext.mirror import build_root_index
 from canvascontext.render import html_to_markdown
@@ -51,14 +52,45 @@ def test_add_transcript_creates_provenance_document(tmp_path) -> None:
         course_root=tmp_path,
         course_id=420,
         date="2026-08-25",
-        title="Vector spaces",
         text="Today we discussed vector spaces.",
     )
 
-    assert destination.name == "2026-08-25-vector-spaces.md"
+    assert destination.name == "2026-08-25.md"
     document = destination.read_text()
     assert 'canvas_type: "lecture_transcript"' in document
+    assert 'title: "2026-08-25"' in document
+    assert "# 2026-08-25" in document
     assert "Today we discussed vector spaces." in document
+
+
+def test_transcript_add_help_describes_inputs(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["transcript", "add", "--help"])
+
+    assert exc_info.value.code == 0
+    output = capsys.readouterr().out
+    assert "Store a lecture transcript" in output
+    assert "Course slug, such as math-300" in output
+    assert "Lecture date" in output
+    assert "standard input" in output
+
+
+def test_transcript_add_requires_date(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(["transcript", "add", "math-300"])
+
+    assert exc_info.value.code == 2
+    assert "the following arguments are required: --date" in capsys.readouterr().err
+
+
+def test_transcript_add_rejects_invalid_date(capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        _parser().parse_args(
+            ["transcript", "add", "math-300", "--date", "2026-02-30"]
+        )
+
+    assert exc_info.value.code == 2
+    assert "expected YYYY-MM-DD" in capsys.readouterr().err
 
 
 def test_offline_config_does_not_require_token_file(tmp_path, monkeypatch) -> None:

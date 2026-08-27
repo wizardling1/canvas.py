@@ -6,6 +6,7 @@ Uses ETag to avoid re-downloading unchanged files.
 Note: This module is import-safe (no config reads at import time).
 """
 
+import argparse
 import sys, json, time, re
 from pathlib import Path
 from typing import Optional, Dict, Iterable
@@ -18,6 +19,7 @@ API_BASE = "https://wsu.instructure.com/api/v1"
 OUTDIR = Path("./downloads").resolve()
 
 from canvascli import utils as _cu
+from canvascli.parsing import HelpfulArgumentParser
 
 
 def iter_module_file_ids(sess: requests.Session, course_id: str) -> Iterable[int]:
@@ -131,9 +133,39 @@ def fetch_pdfs_to(sess: requests.Session, course_id: str, outdir: Path) -> int:
         OUTDIR = old_outdir
 
 
-def main():
-    # Standalone execution: read config next to this script
-    cfg_path = Path(__file__).with_name("canvas_config.json")
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        description=(
+            "Download PDF files referenced by visible Canvas modules. The tool "
+            "uses ETags to avoid downloading unchanged files."
+        ),
+        epilog=(
+            "examples:\n"
+            "  python3 fetch_pdfs.py\n"
+            "  python3 fetch_pdfs.py --output ./course-pdfs\n"
+            "  python3 fetch_pdfs.py --config ./canvas_config.json"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).with_name("canvas_config.json"),
+        metavar="PATH",
+        help="Canvas JSON config containing token and course_id (default: next to this script)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        metavar="DIR",
+        help="Download directory (default: the config outdir value or ./downloads)",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+    cfg_path = args.config.expanduser().resolve()
     if not cfg_path.exists():
         sys.exit(f"Missing canvas_config.json. Please create {cfg_path}")
 
@@ -144,7 +176,7 @@ def main():
 
     token = config.get("token")
     course_id = str(config.get("course_id") or "")
-    outdir = Path(config.get("outdir", "./downloads")).resolve()
+    outdir = (args.output or Path(config.get("outdir", "./downloads"))).expanduser().resolve()
 
     if not token or not course_id:
         sys.exit("canvas_config.json must include 'token' and 'course_id'")

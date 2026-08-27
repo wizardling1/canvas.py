@@ -48,14 +48,26 @@ Resource modules currently cover courses, modules/items, assignments, submission
 The legacy `canvas.py` entry point is retained. It reads `canvas_config.json` from the current directory, with `CANVAS_TOKEN` taking precedence over the file token.
 
 ```bash
-python3 canvas.py
+python3 canvas.py --help
+python3 canvas.py status
 python3 canvas.py pick
 python3 canvas.py pick --set-id 123456
 python3 canvas.py ls
 python3 canvas.py fetch ./downloads
 ```
 
-The older standalone scripts remain available during the migration.
+Commands and nested commands provide contextual help. Argument errors print the
+relevant command help before the error message:
+
+```bash
+python3 canvas.py fetch --help
+python3 canvascontext.py transcript --help
+python3 canvascontext.py transcript add --help
+```
+
+The older standalone scripts remain available during the migration. Each
+supports `--help`; tools that read configuration also accept `--config`, and
+the legacy download tools accept `--output`.
 
 ## canvascontext
 
@@ -81,8 +93,15 @@ Useful offline commands:
 python3 canvascontext.py verify
 python3 canvascontext.py status
 python3 canvascontext.py transcript add example-course \
-  --date 2026-08-25 \
-  --title "Vector spaces" < transcript.txt
+  --date 2026-08-25 < transcript.txt
+```
+
+Every command level provides its own help and examples:
+
+```bash
+python3 canvascontext.py --help
+python3 canvascontext.py transcript --help
+python3 canvascontext.py transcript add --help
 ```
 
 `status`, `verify`, and transcript ingestion do not require a working Canvas token. Synchronization uses `CANVAS_TOKEN` or the `token_file` configured in `canvascontext.toml`.

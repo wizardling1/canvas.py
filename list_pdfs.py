@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import sys, re, json
 from pathlib import Path
 import requests
@@ -10,6 +11,7 @@ API_BASE = "https://wsu.instructure.com/api/v1"
 
 from canvasapi import iter_paginated
 from canvascli.formatting import human_size, iso_to_local
+from canvascli.parsing import HelpfulArgumentParser
 
 # ---------- helpers ----------
 def iso_dt(s):
@@ -124,9 +126,32 @@ def print_pdfs_table(rows):
     print()
 
 
-def main():
-    # Standalone execution: read config next to this script
-    cfg_path = Path(__file__).with_name("canvas_config.json")
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        description=(
+            "List PDF files visible through Canvas modules and the course Files "
+            "API, including their download URLs."
+        ),
+        epilog=(
+            "examples:\n"
+            "  python3 list_pdfs.py\n"
+            "  python3 list_pdfs.py --config ./canvas_config.json"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).with_name("canvas_config.json"),
+        metavar="PATH",
+        help="Canvas JSON config containing token and course_id (default: next to this script)",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+    cfg_path = args.config.expanduser().resolve()
     if not cfg_path.exists():
         sys.exit(f"Missing {cfg_path}. Example:\n{{\"token\":\"...\",\"course_id\":1864601}}")
 

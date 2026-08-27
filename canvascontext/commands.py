@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -15,37 +16,155 @@ from .storage import read_json, write_text_if_changed
 from .transcripts import add_transcript
 
 
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="canvascontext", description="Maintain local Canvas course mirrors"
+class HelpfulArgumentParser(argparse.ArgumentParser):
+    """Show the relevant command help whenever argument parsing fails."""
+
+    def error(self, message: str) -> None:
+        self.print_help(sys.stderr)
+        self.exit(2, f"\n{self.prog}: error: {message}\n")
+
+
+def _iso_date(value: str) -> str:
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"invalid date {value!r}; expected YYYY-MM-DD"
+        ) from exc
+    if parsed.isoformat() != value:
+        raise argparse.ArgumentTypeError(
+            f"invalid date {value!r}; expected YYYY-MM-DD"
+        )
+    return value
+
+
+def _add_sync_parser(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "sync",
+        help="Synchronize Canvas course content",
+        description=(
+            "Synchronize configured courses from Canvas. If no course slugs are "
+            "provided, all configured courses are synchronized."
+        ),
     )
     parser.add_argument(
-        "--config", type=Path, default=Path("canvascontext.toml")
+        "courses",
+        nargs="*",
+        metavar="COURSE",
+        help="Course slug, such as math-300; default: all configured courses",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.set_defaults(handler=_handle_sync, requires_token=True)
 
-    sync = subparsers.add_parser("sync", help="Synchronize Canvas course content")
-    sync.add_argument("courses", nargs="*", help="Course slugs; default is all")
 
-    status = subparsers.add_parser(
-        "status", help="Regenerate STATUS.md from the last mirror"
+def _add_status_parser(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "status",
+        help="Regenerate course status summaries",
+        description=(
+            "Regenerate STATUS.md from the existing local mirror without "
+            "contacting Canvas."
+        ),
     )
-    status.add_argument("courses", nargs="*", help="Course slugs; default is all")
-
-    transcript = subparsers.add_parser(
-        "transcript", help="Add a user-provided lecture transcript"
+    parser.add_argument(
+        "courses",
+        nargs="*",
+        metavar="COURSE",
+        help="Course slug, such as math-300; default: all configured courses",
     )
-    transcript_subparsers = transcript.add_subparsers(
-        dest="transcript_command", required=True
-    )
-    add = transcript_subparsers.add_parser("add")
-    add.add_argument("course")
-    add.add_argument("--date", required=True)
-    add.add_argument("--title", required=True)
-    add.add_argument("--file", type=Path)
+    parser.set_defaults(handler=_handle_status, requires_token=False)
 
-    verify = subparsers.add_parser("verify", help="Check mirror completeness")
-    verify.add_argument("courses", nargs="*", help="Course slugs; default is all")
+
+def _add_transcript_parser(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "transcript",
+        help="Manage user-provided lecture transcripts",
+        description="Store user-provided lecture transcripts in course mirrors.",
+    )
+    transcript_subparsers = parser.add_subparsers(
+        dest="transcript_command",
+        required=True,
+        metavar="COMMAND",
+        title="transcript commands",
+    )
+    add = transcript_subparsers.add_parser(
+        "add",
+        help="Store a lecture transcript",
+        description=(
+            "Store a lecture transcript under the selected course and date. "
+            "Text is read from standard input unless --file is provided."
+        ),
+        epilog=(
+            "example:\n"
+            "  canvascontext transcript add math-300 --date 2026-08-28 "
+            "< transcript.txt"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    add.add_argument(
+        "course", metavar="COURSE", help="Course slug, such as math-300"
+    )
+    add.add_argument(
+        "--date",
+        required=True,
+        type=_iso_date,
+        metavar="YYYY-MM-DD",
+        help="Lecture date; also used as the document title and filename",
+    )
+    add.add_argument(
+        "--file",
+        type=Path,
+        metavar="PATH",
+        help="Read transcript text from this file instead of standard input",
+    )
+    add.set_defaults(handler=_add_transcript, requires_token=False)
+
+
+def _add_verify_parser(subparsers: Any) -> None:
+    parser = subparsers.add_parser(
+        "verify",
+        help="Check mirror completeness",
+        description=(
+            "Check that each local course mirror contains its required generated "
+            "files. This command does not contact Canvas."
+        ),
+    )
+    parser.add_argument(
+        "courses",
+        nargs="*",
+        metavar="COURSE",
+        help="Course slug, such as math-300; default: all configured courses",
+    )
+    parser.set_defaults(handler=_handle_verify, requires_token=False)
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        prog="canvascontext",
+        description="Maintain local, agent-readable Canvas course mirrors.",
+        epilog=(
+            "examples:\n"
+            "  canvascontext sync\n"
+            "  canvascontext sync math-300\n"
+            "  canvascontext status math-300\n"
+            "  canvascontext transcript add math-300 --date 2026-08-28\n"
+            "  canvascontext verify"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("canvascontext.toml"),
+        metavar="PATH",
+        help="Configuration file (default: canvascontext.toml)",
+    )
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, metavar="COMMAND", title="commands"
+    )
+    _add_sync_parser(subparsers)
+    _add_status_parser(subparsers)
+    _add_transcript_parser(subparsers)
+    _add_verify_parser(subparsers)
     return parser
 
 
@@ -133,7 +252,6 @@ def _add_transcript(config: ContextConfig, args: argparse.Namespace) -> int:
         course_root=config.output / course.slug,
         course_id=course.id,
         date=args.date,
-        title=args.title,
         text=text,
     )
     print(destination)
@@ -162,18 +280,21 @@ def _verify(config: ContextConfig, names: list[str]) -> int:
     return 1 if failures else 0
 
 
+def _handle_sync(config: ContextConfig, args: argparse.Namespace) -> int:
+    return _sync(config, args.courses)
+
+
+def _handle_status(config: ContextConfig, args: argparse.Namespace) -> int:
+    return _regenerate_status(config, args.courses)
+
+
+def _handle_verify(config: ContextConfig, args: argparse.Namespace) -> int:
+    return _verify(config, args.courses)
+
+
 def main(argv: list[str] | None = None) -> None:
     args = _parser().parse_args(argv)
-    config = load_config(args.config, require_token=args.command == "sync")
-    if args.command == "sync":
-        code = _sync(config, args.courses)
-    elif args.command == "status":
-        code = _regenerate_status(config, args.courses)
-    elif args.command == "transcript" and args.transcript_command == "add":
-        code = _add_transcript(config, args)
-    elif args.command == "verify":
-        code = _verify(config, args.courses)
-    else:
-        raise SystemExit("Unknown command")
+    config = load_config(args.config, require_token=args.requires_token)
+    code = args.handler(config, args)
     if code:
         raise SystemExit(code)

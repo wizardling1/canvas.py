@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -23,6 +22,7 @@ from canvasapi.modules import list_modules
 from .config import CanvasConfig, load_config_from_cwd, save_config
 from .downloads import assignment_file_ids, conditional_download, file_destination
 from .formatting import human_size, iso_to_local
+from .parsing import HelpfulArgumentParser
 from .utils import normalize_course_stem, safe_filename
 
 
@@ -49,10 +49,7 @@ def cmd_status() -> None:
     name = course.get("name") or course.get("course_code") or "(unnamed course)"
     print("Canvas CLI")
     print(f"- Current course: id={course_id} — {name}")
-    print("\nAvailable commands:")
-    print("  pick        Select or set the active course")
-    print("  ls          List PDFs and assignments")
-    print("  fetch       Download PDFs and assignment files")
+    print("\nRun 'canvas --help' to see available commands.")
 
 
 def _course_sort_key(course: dict[str, Any]) -> tuple[str, str]:
@@ -60,13 +57,7 @@ def _course_sort_key(course: dict[str, Any]) -> tuple[str, str]:
     return term.get("start_at") or "9999", course.get("name") or ""
 
 
-def cmd_pick(argv: list[str]) -> None:
-    parser = argparse.ArgumentParser(prog="canvas.py pick")
-    parser.add_argument("--all", action="store_true")
-    parser.add_argument("--search")
-    parser.add_argument("--set-id", type=int)
-    args = parser.parse_args(argv)
-
+def cmd_pick(args: argparse.Namespace) -> None:
     config = load_config_from_cwd()
     client = client_from_config(config)
     if args.set_id:
@@ -225,13 +216,13 @@ def cmd_ls() -> None:
     )
 
 
-def cmd_fetch(argv: list[str]) -> None:
+def cmd_fetch(args: argparse.Namespace) -> None:
     config = load_config_from_cwd()
     course_id = selected_course_id(config)
     client = client_from_config(config)
     course = get_course(client, course_id)
-    if argv:
-        output = Path(argv[0]).expanduser().resolve()
+    if args.output:
+        output = args.output.expanduser().resolve()
     else:
         name = course.get("name") or course.get("course_code") or "course"
         output = Path.cwd() / f"{normalize_course_stem(str(name))}_downloads"
@@ -288,22 +279,110 @@ def cmd_fetch(argv: list[str]) -> None:
     print("\nDone.")
 
 
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        prog="canvas",
+        description=(
+            "Inspect a Canvas course, select the active course, and download "
+            "course files. Configuration is read from canvas_config.json in "
+            "the current directory; CANVAS_TOKEN overrides its token."
+        ),
+        epilog=(
+            "examples:\n"
+            "  canvas status\n"
+            "  canvas pick --search calculus\n"
+            "  canvas pick --set-id 123456\n"
+            "  canvas ls\n"
+            "  canvas fetch ./downloads"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(
+        dest="command", required=True, metavar="COMMAND", title="commands"
+    )
+
+    status = subparsers.add_parser(
+        "status",
+        help="Show the configured active course",
+        description=(
+            "Read the active course from canvas_config.json and confirm that it "
+            "is accessible with the configured Canvas credentials."
+        ),
+    )
+    status.set_defaults(handler=lambda _args: cmd_status())
+
+    pick = subparsers.add_parser(
+        "pick",
+        help="Select or set the active Canvas course",
+        description=(
+            "List Canvas courses and interactively save one as the active course, "
+            "or use --set-id for a non-interactive update."
+        ),
+        epilog=(
+            "examples:\n"
+            "  canvas pick\n"
+            "  canvas pick --all\n"
+            "  canvas pick --search math\n"
+            "  canvas pick --set-id 123456"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    pick.add_argument(
+        "--all",
+        action="store_true",
+        help="Include past, future, and concluded courses instead of active courses only",
+    )
+    pick.add_argument(
+        "--search",
+        metavar="TEXT",
+        help="Filter courses by name or course code (case-insensitive)",
+    )
+    pick.add_argument(
+        "--set-id",
+        type=int,
+        metavar="COURSE_ID",
+        help="Save this Canvas course ID without listing or prompting",
+    )
+    pick.set_defaults(handler=cmd_pick)
+
+    listing = subparsers.add_parser(
+        "ls",
+        aliases=["list"],
+        help="List visible PDFs and assignments for the active course",
+        description=(
+            "List PDFs discovered through modules or the course Files API, then "
+            "list visible assignments and their submission state."
+        ),
+    )
+    listing.set_defaults(handler=lambda _args: cmd_ls())
+
+    fetch = subparsers.add_parser(
+        "fetch",
+        help="Download PDFs and assignment files for the active course",
+        description=(
+            "Download visible course PDFs plus assignment attachments and linked "
+            "files. Existing files use conditional requests when possible."
+        ),
+        epilog="examples:\n  canvas fetch\n  canvas fetch ./downloads",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    fetch.add_argument(
+        "output",
+        nargs="?",
+        type=Path,
+        metavar="OUTDIR",
+        help=(
+            "Download directory; default: a course-named directory in the "
+            "current directory"
+        ),
+    )
+    fetch.set_defaults(handler=cmd_fetch)
+    return parser
+
+
 def main(argv: list[str] | None = None) -> None:
-    arguments = list(sys.argv[1:] if argv is None else argv)
     try:
-        if not arguments:
-            cmd_status()
-            return
-        command, rest = arguments[0], arguments[1:]
-        if command == "pick":
-            cmd_pick(rest)
-        elif command in {"ls", "list"}:
-            cmd_ls()
-        elif command == "fetch":
-            cmd_fetch(rest)
-        else:
-            raise SystemExit(
-                f"Unknown command: {command}\nUsage: canvas.py [pick|ls|fetch [OUTDIR]]"
-            )
+        args = _parser().parse_args(argv)
+        args.handler(args)
     except CanvasError as exc:
         raise SystemExit(str(exc)) from exc

@@ -3,12 +3,13 @@ import argparse, os, sys, urllib.parse, pathlib, re, json
 from datetime import datetime
 from typing import Optional, Tuple
 
-from playwright.sync_api import sync_playwright
-import browser_cookie3 as bc3
+from canvascli.parsing import HelpfulArgumentParser
 
 # ------------------ helpers ------------------
 
 def load_cookies(browser: str, domains=("zoom.us", "wsu.zoom.us")):
+    import browser_cookie3 as bc3
+
     get = {"chrome": bc3.chrome, "safari": bc3.safari, "firefox": bc3.firefox}[browser]
     jar = get(domain_name=None)
     cookies = []
@@ -299,17 +300,61 @@ def process_one_url(playwright, args, url: str, outdir: pathlib.Path) -> bool:
 
 # ------------------ CLI ------------------
 
-def main():
-    ap = argparse.ArgumentParser(description="Open Zoom recording, sniff transcript, convert to .txt, and save with descriptive names.")
-    ap.add_argument("url", nargs="?", help="Zoom play URL (optional if you'll paste interactively)")
-    ap.add_argument("--browser", choices=["chrome","safari","firefox"], default="chrome",
-                    help="Browser to import cookies from (default: chrome)")
-    ap.add_argument("--outdir", default="downloads", help="Directory to save outputs (default: downloads)")
-    ap.add_argument("--headful", action="store_true", help="Show browser window (default headless)")
-    ap.add_argument("--verbose", action="store_true", help="Print debug info")
-    args = ap.parse_args()
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        description=(
+            "Open Zoom cloud recordings with imported browser cookies, capture "
+            "transcript responses, and save VTT and plain-text files."
+        ),
+        epilog=(
+            "examples:\n"
+            "  python3 zoom.py 'https://example.zoom.us/rec/play/...'\n"
+            "  python3 zoom.py --browser firefox --headful\n"
+            "  python3 zoom.py --outdir ./transcripts"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "url",
+        nargs="?",
+        metavar="URL",
+        help="Zoom cloud-recording play URL; prompts interactively when omitted",
+    )
+    parser.add_argument(
+        "--browser",
+        choices=["chrome", "safari", "firefox"],
+        default="chrome",
+        help="Browser profile from which to import Zoom cookies (default: chrome)",
+    )
+    parser.add_argument(
+        "--outdir",
+        type=pathlib.Path,
+        default=pathlib.Path("downloads"),
+        metavar="DIR",
+        help="Directory for VTT and text files (default: ./downloads)",
+    )
+    parser.add_argument(
+        "--headful",
+        action="store_true",
+        help="Show the automated browser window instead of running headless",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Print matching network requests"
+    )
+    return parser
 
-    outdir = pathlib.Path(args.outdir)
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            "Zoom support is not installed; run: pip install -e '.[zoom]'"
+        ) from exc
+
+    outdir = args.outdir.expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as pw:
@@ -348,4 +393,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

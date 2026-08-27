@@ -28,6 +28,7 @@ API_BASE = "https://wsu.instructure.com/api/v1"
 # Note: keep module import-safe; no config or session setup at import time.
 
 from canvascli.formatting import iso_to_local
+from canvascli.parsing import HelpfulArgumentParser
 from canvasapi import iter_paginated
 
 
@@ -128,15 +129,44 @@ def print_csv(rows: List[Dict[str, Any]]):
         writer.writerow(r)
 
 
-def main():
-    ap = argparse.ArgumentParser(description="List Canvas assignments for a course.")
-    ap.add_argument("--format", choices=["table", "csv", "json"], default="table",
-                    help="Output format (default: table)")
-    ap.add_argument("--all", action="store_true",
-                    help="Include unpublished/locked assignments")
-    args = ap.parse_args()
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        description=(
+            "List assignments and your submission state for the configured "
+            "Canvas course."
+        ),
+        epilog=(
+            "examples:\n"
+            "  python3 list_assignments.py\n"
+            "  python3 list_assignments.py --format json\n"
+            "  python3 list_assignments.py --all --format csv"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).with_name("canvas_config.json"),
+        metavar="PATH",
+        help="Canvas JSON config containing token and course_id (default: next to this script)",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["table", "csv", "json"],
+        default="table",
+        help="Output format (default: table)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include unpublished and user-locked assignments",
+    )
+    return parser
 
-    cfg_path = Path(__file__).with_name("canvas_config.json")
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+    cfg_path = args.config.expanduser().resolve()
     if not cfg_path.exists():
         sys.exit(f"Missing canvas_config.json. Please create {cfg_path}")
 

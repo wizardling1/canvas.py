@@ -11,6 +11,7 @@ Download all homework-related attachments/linked files from a Canvas course.
 Note: Import-safe. No config reads at import time.
 """
 
+import argparse
 import json
 import re
 import sys
@@ -19,6 +20,7 @@ from typing import Dict, Iterable, List, Optional, Set
 
 import requests
 from canvasapi import iter_paginated
+from canvascli.parsing import HelpfulArgumentParser
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 OUTROOT = Path("./downloads")
@@ -97,11 +99,45 @@ def conditional_download(sess: requests.Session, url: str, out_path: Path) -> No
     print(f"Saved: {out_path}")
 
 
-def main():
-    # Standalone execution: read config next to this script
-    cfg_path = Path(__file__).with_name("canvas_config.json")
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        description=(
+            "Download attachments and Canvas file links found in visible "
+            "assignments, grouped into one directory per assignment."
+        ),
+        epilog=(
+            "examples:\n"
+            "  python3 fetch_assignments.py\n"
+            "  python3 fetch_assignments.py --output ./homework-files\n"
+            "  python3 fetch_assignments.py --config ./canvas_config.json"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(__file__).with_name("canvas_config.json"),
+        metavar="PATH",
+        help="Canvas JSON config containing token and course_id (default: next to this script)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=OUTROOT,
+        metavar="DIR",
+        help="Root download directory (default: ./downloads)",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+    cfg_path = args.config.expanduser().resolve()
     if not cfg_path.exists():
-        sys.exit(f"Missing config.json. Create {cfg_path} with {{\"token\":\"...\",\"course_id\":123}}")
+        sys.exit(
+            f"Missing Canvas config: {cfg_path}. Create it with "
+            '{"token":"...","course_id":123}'
+        )
     try:
         cfg = json.loads(cfg_path.read_text())
     except json.JSONDecodeError as e:
@@ -115,7 +151,7 @@ def main():
     sess = requests.Session()
     sess.headers.update({"Authorization": f"Bearer {token}"})
 
-    fetch_assignment_files(sess, course_id, OUTROOT)
+    fetch_assignment_files(sess, course_id, args.output.expanduser().resolve())
 
 
 def fetch_assignment_files(sess: requests.Session, course_id: str, outroot: Path) -> None:

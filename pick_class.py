@@ -11,12 +11,14 @@ Usage:
   python3 pick_class.py --search math # filter by name/code
   python3 pick_class.py --set-id 123  # non-interactive, set course_id directly
 """
+import argparse
 import sys, json
 from pathlib import Path
 import requests
 from canvasapi import iter_paginated
 from typing import Dict, List, Optional
 from tabulate import tabulate
+from canvascli.parsing import HelpfulArgumentParser
 
 API_BASE = "https://wsu.instructure.com/api/v1"
 from canvascli import utils as _cu
@@ -82,14 +84,19 @@ def print_courses(courses: List[Dict]):
     print(tabulate(rows, headers=["#", "id", "term", "code", "name"], tablefmt="github", disable_numparse=True))
 
 # ---------- main ----------
-def run(include_all: bool = False, search: Optional[str] = None, set_id: Optional[int] = None) -> None:
+def run(
+    include_all: bool = False,
+    search: Optional[str] = None,
+    set_id: Optional[int] = None,
+    config_path: Optional[Path] = None,
+) -> None:
     """Programmatic entry point to pick or set the active Canvas course.
 
     - If set_id is provided, update canvas_config.json non-interactively and return.
     - Otherwise, list courses and prompt the user to pick one.
     """
     # Always use the caller's current working directory for canvas_config.json
-    cfg_path = Path.cwd() / "canvas_config.json"
+    cfg_path = (config_path or Path.cwd() / "canvas_config.json").expanduser().resolve()
     cfg = load_config(cfg_path)
     token = cfg.get("token")
     if not token:
@@ -132,15 +139,54 @@ def run(include_all: bool = False, search: Optional[str] = None, set_id: Optiona
         print("Invalid selection. Please try again.")
 
 
-def main():
-    import argparse
-    ap = argparse.ArgumentParser(description="Pick a Canvas course and store course_id in canvas_config.json (in current directory)")
-    ap.add_argument("--all", action="store_true", help="Include past/future/ended enrollments (not just active)")
-    ap.add_argument("--search", help="Filter course list by name or code (case-insensitive)")
-    ap.add_argument("--set-id", type=int, help="Non-interactive: set course_id directly and exit")
-    args = ap.parse_args()
+def _parser() -> argparse.ArgumentParser:
+    parser = HelpfulArgumentParser(
+        description=(
+            "List Canvas courses and save the selected course_id to a JSON "
+            "configuration file."
+        ),
+        epilog=(
+            "examples:\n"
+            "  python3 pick_class.py\n"
+            "  python3 pick_class.py --search math\n"
+            "  python3 pick_class.py --set-id 123456"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path.cwd() / "canvas_config.json",
+        metavar="PATH",
+        help="Canvas JSON config to read and update (default: ./canvas_config.json)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Include past, future, and concluded courses instead of active courses only",
+    )
+    parser.add_argument(
+        "--search",
+        metavar="TEXT",
+        help="Filter courses by name or course code (case-insensitive)",
+    )
+    parser.add_argument(
+        "--set-id",
+        type=int,
+        metavar="COURSE_ID",
+        help="Save this Canvas course ID without listing or prompting",
+    )
+    return parser
 
-    run(include_all=args.all, search=args.search, set_id=args.set_id)
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parser().parse_args(argv)
+    run(
+        include_all=args.all,
+        search=args.search,
+        set_id=args.set_id,
+        config_path=args.config,
+    )
 
 if __name__ == "__main__":
     main()
