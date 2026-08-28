@@ -29,7 +29,7 @@ from .utils import normalize_course_stem, safe_filename
 def client_from_config(config: CanvasConfig) -> CanvasClient:
     token = config.get("token")
     if not token:
-        raise SystemExit("canvas_config.json or CANVAS_TOKEN must provide 'token'")
+        raise SystemExit("Set CANVAS_TOKEN before contacting Canvas")
     return CanvasClient(
         base_url=str(config.get("base_url") or DEFAULT_BASE_URL), token=str(token)
     )
@@ -38,7 +38,7 @@ def client_from_config(config: CanvasConfig) -> CanvasClient:
 def selected_course_id(config: CanvasConfig) -> int:
     course_id = config.get("course_id")
     if not course_id:
-        raise SystemExit("canvas_config.json must include 'course_id'")
+        raise SystemExit("canvascli.toml must include 'course_id'")
     return int(course_id)
 
 
@@ -49,7 +49,7 @@ def cmd_status() -> None:
     name = course.get("name") or course.get("course_code") or "(unnamed course)"
     print("Canvas CLI")
     print(f"- Current course: id={course_id} — {name}")
-    print("\nRun 'canvas --help' to see available commands.")
+    print("\nRun 'canvascli --help' to see available commands.")
 
 
 def _course_sort_key(course: dict[str, Any]) -> tuple[str, str]:
@@ -281,19 +281,19 @@ def cmd_fetch(args: argparse.Namespace) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = HelpfulArgumentParser(
-        prog="canvas",
+        prog="canvascli",
         description=(
             "Inspect a Canvas course, select the active course, and download "
-            "course files. Configuration is read from canvas_config.json in "
-            "the current directory; CANVAS_TOKEN overrides its token."
+            "course files. Configuration is read from canvascli.toml in "
+            "the current directory; credentials are read from CANVAS_TOKEN."
         ),
         epilog=(
             "examples:\n"
-            "  canvas status\n"
-            "  canvas pick --search calculus\n"
-            "  canvas pick --set-id 123456\n"
-            "  canvas ls\n"
-            "  canvas fetch ./downloads"
+            "  canvascli status\n"
+            "  canvascli pick --search calculus\n"
+            "  canvascli pick --set-id 123456\n"
+            "  canvascli ls\n"
+            "  canvascli fetch ./downloads"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -305,7 +305,7 @@ def _parser() -> argparse.ArgumentParser:
         "status",
         help="Show the configured active course",
         description=(
-            "Read the active course from canvas_config.json and confirm that it "
+            "Read the active course from canvascli.toml and confirm that it "
             "is accessible with the configured Canvas credentials."
         ),
     )
@@ -320,10 +320,10 @@ def _parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "examples:\n"
-            "  canvas pick\n"
-            "  canvas pick --all\n"
-            "  canvas pick --search math\n"
-            "  canvas pick --set-id 123456"
+            "  canvascli pick\n"
+            "  canvascli pick --all\n"
+            "  canvascli pick --search math\n"
+            "  canvascli pick --set-id 123456"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -363,7 +363,7 @@ def _parser() -> argparse.ArgumentParser:
             "Download visible course PDFs plus assignment attachments and linked "
             "files. Existing files use conditional requests when possible."
         ),
-        epilog="examples:\n  canvas fetch\n  canvas fetch ./downloads",
+        epilog="examples:\n  canvascli fetch\n  canvascli fetch ./downloads",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     fetch.add_argument(

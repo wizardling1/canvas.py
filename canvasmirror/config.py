@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 try:
     import tomllib
@@ -20,7 +19,7 @@ class CourseSpec:
 
 
 @dataclass(frozen=True)
-class ContextConfig:
+class MirrorConfig:
     base_url: str
     token: str
     output: Path
@@ -28,27 +27,16 @@ class ContextConfig:
     max_file_bytes: int = 500 * 1024 * 1024
 
 
-def load_config(path: Path, *, require_token: bool = True) -> ContextConfig:
+def load_config(path: Path, *, require_token: bool = True) -> MirrorConfig:
     path = path.expanduser().resolve()
     if not path.exists():
-        raise SystemExit(f"Missing canvascontext config: {path}")
+        raise SystemExit(f"Missing canvasmirror config: {path}")
     with path.open("rb") as config_file:
         data = tomllib.load(config_file)
 
     token = os.getenv("CANVAS_TOKEN", "")
-    token_file = data.get("token_file")
-    if not token and token_file:
-        token_path = (path.parent / str(token_file)).resolve()
-        try:
-            token_data = json.loads(token_path.read_text())
-            token = str(token_data.get("token") or "")
-        except (OSError, ValueError, AttributeError) as exc:
-            if require_token:
-                raise SystemExit(f"Cannot load token file {token_path}: {exc}") from exc
     if require_token and not token:
-        raise SystemExit(
-            "Set CANVAS_TOKEN or configure token_file in canvascontext.toml"
-        )
+        raise SystemExit("Set CANVAS_TOKEN before contacting Canvas")
 
     course_specs = tuple(
         CourseSpec(
@@ -59,12 +47,12 @@ def load_config(path: Path, *, require_token: bool = True) -> ContextConfig:
         for course in data.get("courses", [])
     )
     if not course_specs:
-        raise SystemExit("canvascontext.toml must define at least one [[courses]] entry")
+        raise SystemExit("canvasmirror.toml must define at least one [[courses]] entry")
 
     output = Path(str(data.get("output") or "courses")).expanduser()
     if not output.is_absolute():
         output = (path.parent / output).resolve()
-    return ContextConfig(
+    return MirrorConfig(
         base_url=str(data.get("base_url") or DEFAULT_BASE_URL),
         token=token,
         output=output,

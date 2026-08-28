@@ -583,6 +583,6 @@ def build_root_index(output_root: Path, results: list[dict[str, Any]]) -> None:
 - Items under “candidate readings” are inferred from module placement and resource type.
 - Check `synced_at` before describing information as current.
 - Cite the relevant local file when reporting a deadline, status, or course requirement.
-- Do not edit generated mirror files. User-provided transcripts may be added through `canvascontext transcript add`.
+- Do not edit generated mirror files. User-provided transcripts may be added through `canvasmirror transcript add`.
 """
     write_text_if_changed(output_root / "AGENTS.md", instructions)

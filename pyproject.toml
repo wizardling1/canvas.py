@@ -5,7 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wsu-canvas-tools"
 version = "0.1.0"
-description = "Canvas API, interactive CLI, and local course context mirror"
+description = "Canvas API, interactive CLI, and local course mirror"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "requests>=2.31",
@@ -18,11 +19,11 @@ test = ["pytest>=8"]
 zoom = ["browser-cookie3>=0.19", "playwright>=1.40"]
 
 [project.scripts]
-canvas = "canvascli.commands:main"
-canvascontext = "canvascontext.commands:main"
+canvascli = "canvascli.commands:main"
+canvasmirror = "canvasmirror.commands:main"
 
 [tool.setuptools.packages.find]
-include = ["canvasapi*", "canvascli*", "canvascontext*"]
+include = ["canvasapi*", "canvascli*", "canvasmirror*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

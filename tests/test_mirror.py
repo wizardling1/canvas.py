@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 
 import pytest
 
-from canvascontext.commands import _parser
-from canvascontext.config import load_config
-from canvascontext.mirror import build_root_index
-from canvascontext.render import html_to_markdown
-from canvascontext.status import generate_status
-from canvascontext.storage import stable_canvas_data, write_text_if_changed
-from canvascontext.transcripts import add_transcript
+from canvasmirror.commands import _parser
+from canvasmirror.config import load_config
+from canvasmirror.mirror import build_root_index
+from canvasmirror.render import html_to_markdown
+from canvasmirror.status import generate_status
+from canvasmirror.storage import stable_canvas_data, write_text_if_changed
+from canvasmirror.transcripts import add_transcript
 
 
 def test_html_to_markdown_preserves_links_and_lists() -> None:
@@ -93,11 +93,12 @@ def test_transcript_add_rejects_invalid_date(capsys) -> None:
     assert "expected YYYY-MM-DD" in capsys.readouterr().err
 
 
-def test_offline_config_does_not_require_token_file(tmp_path, monkeypatch) -> None:
+def test_config_uses_only_environment_token(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("CANVAS_TOKEN", raising=False)
-    config_path = tmp_path / "canvascontext.toml"
+    config_path = tmp_path / "canvasmirror.toml"
+    (tmp_path / "credentials.json").write_text('{"token": "file-secret"}\n')
     config_path.write_text(
-        'token_file = "missing.json"\n'
+        'token_file = "credentials.json"\n'
         'output = "courses"\n'
         '[[courses]]\n'
         'id = 420\n'
@@ -107,8 +108,11 @@ def test_offline_config_does_not_require_token_file(tmp_path, monkeypatch) -> No
     config = load_config(config_path, require_token=False)
 
     assert config.token == ""
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit, match="Set CANVAS_TOKEN"):
         load_config(config_path, require_token=True)
+
+    monkeypatch.setenv("CANVAS_TOKEN", "environment-secret")
+    assert load_config(config_path).token == "environment-secret"
 
 
 def test_root_index_keeps_all_provided_courses_and_agent_instructions(tmp_path) -> None:

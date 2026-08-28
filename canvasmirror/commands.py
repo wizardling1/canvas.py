@@ -9,7 +9,7 @@ from typing import Any
 
 from canvasapi import CanvasClient, CanvasError
 
-from .config import ContextConfig, CourseSpec, load_config
+from .config import CourseSpec, MirrorConfig, load_config
 from .mirror import CourseMirror, build_root_index
 from .status import generate_status
 from .storage import read_json, write_text_if_changed
@@ -95,7 +95,7 @@ def _add_transcript_parser(subparsers: Any) -> None:
         ),
         epilog=(
             "example:\n"
-            "  canvascontext transcript add math-300 --date 2026-08-28 "
+            "  canvasmirror transcript add math-300 --date 2026-08-28 "
             "< transcript.txt"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -139,24 +139,24 @@ def _add_verify_parser(subparsers: Any) -> None:
 
 def _parser() -> argparse.ArgumentParser:
     parser = HelpfulArgumentParser(
-        prog="canvascontext",
+        prog="canvasmirror",
         description="Maintain local, agent-readable Canvas course mirrors.",
         epilog=(
             "examples:\n"
-            "  canvascontext sync\n"
-            "  canvascontext sync math-300\n"
-            "  canvascontext status math-300\n"
-            "  canvascontext transcript add math-300 --date 2026-08-28\n"
-            "  canvascontext verify"
+            "  canvasmirror sync\n"
+            "  canvasmirror sync math-300\n"
+            "  canvasmirror status math-300\n"
+            "  canvasmirror transcript add math-300 --date 2026-08-28\n"
+            "  canvasmirror verify"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("canvascontext.toml"),
+        default=Path("canvasmirror.toml"),
         metavar="PATH",
-        help="Configuration file (default: canvascontext.toml)",
+        help="Configuration file (default: canvasmirror.toml)",
     )
     subparsers = parser.add_subparsers(
         dest="command", required=True, metavar="COMMAND", title="commands"
@@ -168,7 +168,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _select_courses(config: ContextConfig, names: list[str]) -> list[CourseSpec]:
+def _select_courses(config: MirrorConfig, names: list[str]) -> list[CourseSpec]:
     if not names:
         return list(config.courses)
     requested = set(names)
@@ -179,7 +179,7 @@ def _select_courses(config: ContextConfig, names: list[str]) -> list[CourseSpec]
     return selected
 
 
-def _sync(config: ContextConfig, names: list[str]) -> int:
+def _sync(config: MirrorConfig, names: list[str]) -> int:
     config.output.mkdir(parents=True, exist_ok=True)
     client = CanvasClient(base_url=config.base_url, token=config.token)
     results: list[dict[str, Any]] = []
@@ -219,7 +219,7 @@ def _sync(config: ContextConfig, names: list[str]) -> int:
     return 1 if failures else 0
 
 
-def _regenerate_status(config: ContextConfig, names: list[str]) -> int:
+def _regenerate_status(config: MirrorConfig, names: list[str]) -> int:
     failures = 0
     for course in _select_courses(config, names):
         root = config.output / course.slug
@@ -243,7 +243,7 @@ def _regenerate_status(config: ContextConfig, names: list[str]) -> int:
     return 1 if failures else 0
 
 
-def _add_transcript(config: ContextConfig, args: argparse.Namespace) -> int:
+def _add_transcript(config: MirrorConfig, args: argparse.Namespace) -> int:
     course = _select_courses(config, [args.course])[0]
     text = args.file.read_text() if args.file else sys.stdin.read()
     if not text.strip():
@@ -258,7 +258,7 @@ def _add_transcript(config: ContextConfig, args: argparse.Namespace) -> int:
     return 0
 
 
-def _verify(config: ContextConfig, names: list[str]) -> int:
+def _verify(config: MirrorConfig, names: list[str]) -> int:
     failures = 0
     required = ["INDEX.md", "COURSE.md", "STATUS.md", "SYLLABUS.md"]
     for course in _select_courses(config, names):
@@ -280,15 +280,15 @@ def _verify(config: ContextConfig, names: list[str]) -> int:
     return 1 if failures else 0
 
 
-def _handle_sync(config: ContextConfig, args: argparse.Namespace) -> int:
+def _handle_sync(config: MirrorConfig, args: argparse.Namespace) -> int:
     return _sync(config, args.courses)
 
 
-def _handle_status(config: ContextConfig, args: argparse.Namespace) -> int:
+def _handle_status(config: MirrorConfig, args: argparse.Namespace) -> int:
     return _regenerate_status(config, args.courses)
 
 
-def _handle_verify(config: ContextConfig, args: argparse.Namespace) -> int:
+def _handle_verify(config: MirrorConfig, args: argparse.Namespace) -> int:
     return _verify(config, args.courses)
 
 

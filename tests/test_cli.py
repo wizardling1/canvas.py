@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-import fetch_assignments
-import fetch_pdfs
-import list_assignments
-import list_pdfs
-import pick_class
-import zoom
 from canvascli.commands import _parser as canvas_parser
-from canvascontext.commands import _parser as context_parser
+from canvascli.config import load_config_from_cwd, save_config
+from canvasmirror.commands import _parser as mirror_parser
 
 
 def test_canvas_without_command_shows_description_and_commands(capsys) -> None:
@@ -21,6 +15,7 @@ def test_canvas_without_command_shows_description_and_commands(capsys) -> None:
 
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
+    assert "usage: canvascli" in error
     assert "Inspect a Canvas course" in error
     assert "status" in error
     assert "pick" in error
@@ -41,9 +36,41 @@ def test_canvas_fetch_parser_returns_typed_output_path() -> None:
     assert args.output == Path("course-files")
 
 
-def test_context_without_command_shows_description_and_commands(capsys) -> None:
+def test_canvas_config_uses_only_environment_token(tmp_path, monkeypatch) -> None:
+    (tmp_path / "canvascli.toml").write_text(
+        'base_url = "https://canvas.example"\n'
+        'course_id = 42\n'
+        'token = "file-secret"\n'
+    )
+    monkeypatch.delenv("CANVAS_TOKEN", raising=False)
+
+    config = load_config_from_cwd(tmp_path)
+
+    assert config == {"base_url": "https://canvas.example", "course_id": 42}
+    monkeypatch.setenv("CANVAS_TOKEN", "environment-secret")
+    assert load_config_from_cwd(tmp_path)["token"] == "environment-secret"
+
+
+def test_save_config_never_persists_token(tmp_path) -> None:
+    path = save_config(
+        {
+            "base_url": "https://canvas.example",
+            "course_id": 42,
+            "token": "environment-secret",
+        },
+        tmp_path,
+    )
+
+    assert path.name == "canvascli.toml"
+    assert path.read_text() == (
+        'base_url = "https://canvas.example"\n'
+        'course_id = 42\n'
+    )
+
+
+def test_mirror_without_command_shows_description_and_commands(capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        context_parser().parse_args([])
+        mirror_parser().parse_args([])
 
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
@@ -53,36 +80,11 @@ def test_context_without_command_shows_description_and_commands(capsys) -> None:
     assert "verify" in error
 
 
-def test_context_transcript_without_subcommand_shows_relevant_help(capsys) -> None:
+def test_mirror_transcript_without_subcommand_shows_relevant_help(capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        context_parser().parse_args(["transcript"])
+        mirror_parser().parse_args(["transcript"])
 
     assert exc_info.value.code == 2
     error = capsys.readouterr().err
     assert "Store user-provided lecture transcripts" in error
     assert "add" in error
-
-
-@pytest.mark.parametrize(
-    ("parser_factory", "description"),
-    [
-        (fetch_pdfs._parser, "Download PDF files referenced by visible Canvas modules"),
-        (
-            fetch_assignments._parser,
-            "Download attachments and Canvas file links found in visible assignments",
-        ),
-        (list_assignments._parser, "List assignments and your submission state"),
-        (list_pdfs._parser, "List PDF files visible through Canvas modules"),
-        (pick_class._parser, "List Canvas courses and save the selected course_id"),
-        (zoom._parser, "Open Zoom cloud recordings"),
-    ],
-)
-def test_legacy_tool_help_is_available_without_running_tool(
-    parser_factory: Callable[[], object], description: str, capsys
-) -> None:
-    parser = parser_factory()
-    with pytest.raises(SystemExit) as exc_info:
-        parser.parse_args(["--help"])
-
-    assert exc_info.value.code == 0
-    assert description in capsys.readouterr().out

@@ -4,18 +4,18 @@
 
 - `canvasapi/`: configuration-free Canvas HTTP and resource library. It must not read the environment, current directory, or application config.
 - `canvascli/`: interactive application configuration, formatting, downloads, and the existing command surface.
-- `canvascontext/`: batch course mirror, Markdown rendering, manifests, status generation, and transcripts.
-- `canvas.py` and `canvascontext.py`: compatibility/convenience entry points only.
+- `canvasmirror/`: batch course mirror, Markdown rendering, manifests, status generation, and transcripts.
+- `legacy/canvas.py`: deprecated compatibility entry point.
 - Legacy standalone scripts remain while callers migrate.
 
-Dependency direction is `canvascli -> canvasapi <- canvascontext`. Do not import either child application from the other.
+Dependency direction is `canvascli -> canvasapi <- canvasmirror`. Do not import either child application from the other.
 
 ## Development
 
 - Create a virtual environment with `python3 -m venv .venv` and install with `pip install -e '.[test]'`.
 - Run tests with `python3 -m pytest -q`.
 - Run the legacy CLI from a directory containing `canvas_config.json`.
-- Copy `canvascontext.example.toml` to an ignored local `canvascontext.toml` before running `python3 canvascontext.py sync`.
+- Create an ignored local `canvasmirror.toml` as documented in `README.md` before running `canvasmirror sync`.
 
 ## Style and testing
 
