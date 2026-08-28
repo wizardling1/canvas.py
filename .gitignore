@@ -7,8 +7,6 @@ __pycache__
 *.part
 courses/
 canvas_config.json
-canvascli.toml
-canvasmirror.toml
 test_dir/
 tmp_fetch*/
 *_downloads/

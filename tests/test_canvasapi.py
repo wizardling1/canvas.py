@@ -6,6 +6,7 @@ import pytest
 import requests
 
 from canvasapi import CanvasAuthenticationError, CanvasClient
+from canvasapi.folders import get_folder, list_course_folders
 from canvasapi.modules import list_modules
 
 
@@ -106,3 +107,28 @@ def test_modules_fall_back_when_inline_items_are_omitted() -> None:
     assert modules[0]["items"][0]["title"] == "Reading"
     assert session.requests[1][1].endswith("/courses/99/modules/10/items")
 
+
+def test_folder_resources_use_configuration_free_client_and_pagination() -> None:
+    next_url = "https://canvas.example/api/v1/courses/99/folders?opaque=next"
+    session = FakeSession(
+        [
+            FakeResponse(
+                [{"id": 10, "full_name": "course files/Week 1"}],
+                headers={"Link": f'<{next_url}>; rel="next"'},
+            ),
+            FakeResponse([{"id": 11, "full_name": "course files/Week 2"}]),
+            FakeResponse({"id": 12, "full_name": "course files/Week 3"}),
+        ]
+    )
+    client = CanvasClient(
+        base_url="https://canvas.example",
+        token="secret",
+        session=session,
+        pagination_delay=0,
+    )
+
+    assert [folder["id"] for folder in list_course_folders(client, 99)] == [10, 11]
+    assert get_folder(client, 12)["id"] == 12
+    assert session.requests[0][1].endswith("/courses/99/folders")
+    assert session.requests[1][1] == next_url
+    assert session.requests[2][1].endswith("/folders/12")

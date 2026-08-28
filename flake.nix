@@ -1,5 +1,5 @@
 {
-  description = "Canvas API, interactive CLI, and local course context mirror";
+  description = "Canvas API and local course mirror CLI";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -43,7 +43,7 @@
             pythonImportsCheck = [
               "canvasapi"
               "canvascli"
-              "canvasmirror"
+              "canvascli.mirror"
             ];
 
             meta = {
@@ -65,12 +65,7 @@
           canvascli = {
             type = "app";
             program = "${package}/bin/canvascli";
-            meta.description = "Interactively inspect and download Canvas course resources";
-          };
-          canvasmirror = {
-            type = "app";
-            program = "${package}/bin/canvasmirror";
-            meta.description = "Maintain local, agent-readable Canvas course mirrors";
+            meta.description = "Inspect Canvas and maintain local course mirrors";
           };
           default = self.apps.${system}.canvascli;
         }

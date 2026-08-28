@@ -17,11 +17,12 @@ from canvasapi.calendar import list_calendar_events
 from canvasapi.courses import get_course
 from canvasapi.discussions import list_discussions
 from canvasapi.files import get_file, list_course_files, open_download
+from canvasapi.folders import get_folder, list_course_folders
 from canvasapi.modules import list_modules
 from canvasapi.pages import get_page, list_pages
 from canvasapi.submissions import list_my_submissions
 
-from .config import CourseSpec
+from ..repository import CourseRecord
 from .manifest import Manifest
 from .render import (
     frontmatter,
@@ -47,6 +48,72 @@ T = TypeVar("T")
 FILE_LINK_RE = re.compile(
     r"(?:/api/v1)?/files/(\d+)(?:/download|/preview|\b)", re.IGNORECASE
 )
+UNSAFE_PATH_CHARS_RE = re.compile(r'[\x00-\x1f<>:"/\\|?*]')
+
+
+def safe_path_component(value: str, fallback: str) -> str:
+    """Return one safe, human-readable local path component."""
+    component = UNSAFE_PATH_CHARS_RE.sub("_", value).strip()
+    component = component.rstrip(".")
+    if component in {"", ".", ".."}:
+        component = fallback
+    if len(component) > 180:
+        source = Path(component)
+        suffix = source.suffix[:20]
+        component = f"{source.stem[: 180 - len(suffix)]}{suffix}"
+    return component
+
+
+def folder_relative_path(
+    folder: dict[str, Any] | None, folder_id: int | None
+) -> Path:
+    """Return a safe path below ``files/`` for a Canvas folder."""
+    if not folder:
+        label = str(folder_id) if folder_id is not None else "unknown"
+        return Path(f"_unresolved-folder-{label}")
+    full_name = str(folder.get("full_name") or "")
+    parts = [part for part in full_name.split("/") if part]
+    if not parts:
+        label = str(folder_id) if folder_id is not None else "unknown"
+        return Path(f"_unresolved-folder-{label}")
+    # Canvas includes the context root (normally "course files") in full_name.
+    relative_parts = parts[1:]
+    return Path(
+        *(safe_path_component(part, "unnamed-folder") for part in relative_parts)
+    )
+
+
+def file_relative_path(
+    file_id: int,
+    metadata: dict[str, Any],
+    folders_by_id: dict[int, dict[str, Any]],
+    used_paths: dict[str, int],
+) -> Path:
+    """Choose a collision-safe local path retaining the Canvas folder tree."""
+    raw_folder_id = metadata.get("folder_id")
+    try:
+        folder_id = int(raw_folder_id) if raw_folder_id is not None else None
+    except (TypeError, ValueError):
+        folder_id = None
+    directory = folder_relative_path(
+        folders_by_id.get(folder_id) if folder_id is not None else None,
+        folder_id,
+    )
+    raw_name = str(
+        metadata.get("display_name")
+        or metadata.get("filename")
+        or f"file-{file_id}"
+    )
+    filename = safe_path_component(raw_name, f"file-{file_id}")
+    relative = Path("files") / directory / filename
+    collision_key = relative.as_posix().casefold()
+    if collision_key in used_paths and used_paths[collision_key] != file_id:
+        path = Path(filename)
+        filename = f"{path.stem}__{file_id}{path.suffix}"
+        relative = Path("files") / directory / filename
+        collision_key = relative.as_posix().casefold()
+    used_paths[collision_key] = file_id
+    return relative
 
 
 class CourseMirror:
@@ -54,7 +121,7 @@ class CourseMirror:
         self,
         *,
         client: CanvasClient,
-        course: CourseSpec,
+        course: CourseRecord,
         output_root: Path,
         max_file_bytes: int,
     ) -> None:
@@ -146,24 +213,58 @@ class CourseMirror:
                 metadata_by_id[file_id] = metadata
         return metadata_by_id
 
+    def _collect_folder_metadata(
+        self, metadata_by_id: dict[int, dict[str, Any]]
+    ) -> dict[int, dict[str, Any]]:
+        folders_by_id: dict[int, dict[str, Any]] = {}
+        course_folders = self._optional(
+            "course folders",
+            lambda: list_course_folders(self.client, self.course_spec.id),
+            [],
+        )
+        for folder in course_folders:
+            if folder.get("id") is not None:
+                folders_by_id[int(folder["id"])] = folder
+
+        folder_ids: set[int] = set()
+        for metadata in metadata_by_id.values():
+            try:
+                if metadata.get("folder_id") is not None:
+                    folder_ids.add(int(metadata["folder_id"]))
+            except (TypeError, ValueError):
+                self.warnings.append(
+                    f"file {metadata.get('id')}: invalid folder_id={metadata.get('folder_id')!r}"
+                )
+        for folder_id in sorted(folder_ids - folders_by_id.keys()):
+            folder = self._optional(
+                f"folder {folder_id}",
+                lambda folder_id=folder_id: get_folder(self.client, folder_id),
+                {},
+            )
+            if folder and folder.get("id") is not None:
+                folders_by_id[int(folder["id"])] = folder
+        return folders_by_id
+
     def _download_files(
         self,
         manifest: Manifest,
         run_id: int,
         metadata_by_id: dict[int, dict[str, Any]],
+        folders_by_id: dict[int, dict[str, Any]],
     ) -> dict[int, Path]:
         local_files: dict[int, Path] = {}
         etag_directory = self.internal / "etags"
         skipped: list[dict[str, Any]] = []
+        used_paths: dict[str, int] = {}
         for file_id, metadata in sorted(metadata_by_id.items()):
             raw_name = str(
                 metadata.get("display_name")
                 or metadata.get("filename")
                 or f"file-{file_id}"
             )
-            name = f"{file_id}-{safe_slug(Path(raw_name).stem, 'file')}"
-            suffix = Path(raw_name).suffix
-            relative = Path("files") / f"{name}{suffix}"
+            relative = file_relative_path(
+                file_id, metadata, folders_by_id, used_paths
+            )
             destination = self.root / relative
             size = int(metadata.get("size") or 0)
             if self.max_file_bytes and size > self.max_file_bytes:
@@ -320,14 +421,26 @@ class CourseMirror:
                 metadata_by_id = self._collect_file_metadata(
                     modules, assignments, pages
                 )
+                folders_by_id = self._collect_folder_metadata(metadata_by_id)
                 self.changed_files += int(
                     write_json_if_changed(
                         self.raw / "files.json",
                         stable_canvas_data(list(metadata_by_id.values())),
                     )
                 )
+                self.changed_files += int(
+                    write_json_if_changed(
+                        self.raw / "folders.json",
+                        stable_canvas_data(
+                            sorted(
+                                folders_by_id.values(),
+                                key=lambda folder: int(folder.get("id") or 0),
+                            )
+                        ),
+                    )
+                )
                 local_files = self._download_files(
-                    manifest, run_id, metadata_by_id
+                    manifest, run_id, metadata_by_id, folders_by_id
                 )
 
                 self._record_text(
@@ -544,6 +657,7 @@ class CourseMirror:
                         "discussions": len(discussions),
                         "calendar_events": len(calendar_events),
                         "files": len(metadata_by_id),
+                        "folders": len(folders_by_id),
                     },
                     "warnings": self.warnings,
                 }
@@ -583,6 +697,6 @@ def build_root_index(output_root: Path, results: list[dict[str, Any]]) -> None:
 - Items under “candidate readings” are inferred from module placement and resource type.
 - Check `synced_at` before describing information as current.
 - Cite the relevant local file when reporting a deadline, status, or course requirement.
-- Do not edit generated mirror files. User-provided transcripts may be added through `canvasmirror transcript add`.
+- Do not edit generated mirror files. User-provided transcripts may be added through `canvascli transcript add`.
 """
     write_text_if_changed(output_root / "AGENTS.md", instructions)
