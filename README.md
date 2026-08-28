@@ -6,9 +6,6 @@ API](https://developerdocs.instructure.com/services/canvas):
 - `canvasapi`: a Python library for interacting with the Canvas REST API
 - `canvascli`: command-line course browser and batch downloader of course content
 
-`canvascli` is built on `canvasapi`. Below are instructions for using `canvascli`. `canvasapi` is 
-currently undocumented.
-
 ## `canvascli` usage 
 
 `canvascli` is primarily intended to be used by batch downloading all course content into a
