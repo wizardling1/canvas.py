@@ -1,42 +1,31 @@
 # canvas.py
 
-Read-only tools for the [Canvas LMS REST API](https://developerdocs.instructure.com/services/canvas):
+Python tools for downloading course content from Canvas using the [Canvas LMS REST
+API](https://developerdocs.instructure.com/services/canvas):
 
-- `canvasapi`: configuration-free Python library
-- `canvascli`: command-line course browser and local mirror
+- `canvasapi`: a Python library for interacting with the Canvas REST API
+- `canvascli`: command-line course browser and batch downloader of course content
 
-## Requirements
+`canvascli` is built on `canvasapi`. Below are instructions for using `canvascli`. `canvasapi` is 
+currently undocumented.
+
+## `canvascli` usage 
+
+`canvascli` is primarily intended to be used by batch downloading all course content into a
+`canvascli`-managed directory or 'mirror'.
+
+### Running `canvascli` 
+
+The first step is to make sure you can run `canvascli`.
+
+#### Requirements
 
 - Python 3.10+
+- `uv`, `nix`, or `pip`
 - Canvas account and site URL, such as `https://canvas.example.edu`
-- Canvas access token
+- Canvas access token (see below)
 
-## Access token
-
-For personal use or testing:
-
-1. Sign in to Canvas.
-2. Open **Account → Settings**.
-3. Under **Approved Integrations**, select **New Access Token**.
-4. Create and immediately copy the token. Canvas will not show it again.
-
-An institution may disable manual tokens. Multi-user applications must use
-OAuth. See the [Canvas authentication documentation](https://developerdocs.instructure.com/services/canvas/oauth2/file.oauth).
-
-Pass the token only through `CANVAS_TOKEN`:
-
-```bash
-read -rsp "Canvas token: " CANVAS_TOKEN
-printf '\n'
-export CANVAS_TOKEN
-```
-
-Do not store tokens in source files, `canvasmirror.json`, command arguments, or
-the Nix store.
-
-## Install or run
-
-### uv
+#### uv
 
 ```bash
 uv run canvascli --help
@@ -44,7 +33,7 @@ uv run canvascli --help
 
 Prefix later commands with `uv run`.
 
-### Nix
+#### Nix
 
 ```bash
 nix run .#canvascli -- --help
@@ -57,7 +46,7 @@ With `nix run`, pass command arguments after `--`:
 nix run .#canvascli -- status
 ```
 
-### pip or another PEP 517 frontend
+#### pip 
 
 ```bash
 python3 -m venv .venv
@@ -67,28 +56,43 @@ python3 -m pip install -e .
 
 Installation creates `canvascli` in the active environment, not `/usr/bin`.
 
-## Create a mirror
+### Access tokens
+
+Once you can run `canvascli`, you need a canvas access token. 
+
+Here are the steps to obtain one:
+
+1. Sign in to Canvas.
+2. Open **Account → Settings**.
+3. Under **Approved Integrations**, select **New Access Token**.
+4. Create and immediately copy the token. Canvas will not show it again.
+
+For more details see the [Canvas authentication documentation](https://developerdocs.instructure.com/services/canvas/oauth2/file.oauth).
+
+Once you have an access token, make sure the `CANVAS_TOKEN` environment variable is set to your
+token.
+
+### Creating a mirror
+
+Run these commands to create a course mirror:
 
 ```bash
 mkdir courses
 cd courses
 canvascli init --base-url https://canvas.example.edu
-canvascli list-courses
-canvascli add-course 123456 234567
-canvascli sync
-canvascli status
 ```
 
-`init` creates `canvasmirror.json`. Its directory is the mirror root. Commands
-run below that directory find it by searching parent directories.
+Initially the course mirror will have no courses. You can manually added courses by listing your
+courses and their ids. Then add courses manually based on their ids.
 
-`list-courses` shows active courses and their IDs. Use `--all` to include past,
-future, and concluded courses.
+```
+canvascli list-courses 
+canvascli add-course 123456 234567
+```
 
-Add courses by ID or scope:
+You can also add all courses (including completed courses), or all active courses.
 
 ```bash
-canvascli add-course 123456
 canvascli add-course --all-active
 canvascli add-course --all
 ```
@@ -99,17 +103,22 @@ Remove courses without deleting their local files:
 canvascli remove-course 123456
 ```
 
-Synchronize all tracked courses or selected IDs:
+Synchronize all tracked courses or selected IDs to pull the latest changes:
 
 ```bash
 canvascli sync
 canvascli sync 123456 234567
 ```
 
-`CANVAS_TOKEN` is required only for commands that contact Canvas. `init`,
-`remove-course`, `status`, and transcript storage are offline.
+Examine the status of all courses or individual courses:
 
-## Inspect and download
+
+```
+canvascli status
+canvascli status 123456
+```
+
+### Inspect and download
 
 ```bash
 canvascli ls 123456
@@ -120,6 +129,8 @@ canvascli fetch 123456 ./downloads
 `ls` shows visible PDFs and assignments. `fetch` downloads course PDFs and
 assignment files outside the mirror workflow.
 
+Transcript support is experimental and may not work.
+
 Add a transcript from an explicit file:
 
 ```bash
@@ -128,14 +139,12 @@ canvascli transcript add 123456 \
   --file lecture.txt
 ```
 
-No `canvascli` command prompts or reads content implicitly from standard input.
-
 ## Mirror layout
 
-Each course is stored under its generated slug:
+Each course is stored under its generated name:
 
 ```text
-course-slug/
+course-name/
 ├── .canvas/
 │   ├── manifest.sqlite
 │   ├── last-sync.json
@@ -158,18 +167,7 @@ Files whose folder metadata is inaccessible go under
 `_unresolved-folder-ID/`. Files in the Canvas root folder remain directly
 under `files/`.
 
-Synchronization:
-
-- writes files atomically
-- avoids rewriting unchanged source data
-- preserves raw JSON separately from rendered Markdown
-- records inaccessible resources as warnings
-- marks missing remote resources stale instead of deleting them
-- never modifies or removes user transcripts
-
-`canvascli status` checks local files and manifests without contacting Canvas.
-
-## Use `canvasapi`
+## `canvasapi` usage
 
 `canvasapi` does not read environment variables, configuration files, or the
 current directory. Pass configuration explicitly:
@@ -201,4 +199,3 @@ uv run --extra test pytest -q
 nix flake check
 ```
 
-Tests use mocked HTTP responses and do not contact Canvas.
