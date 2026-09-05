@@ -215,7 +215,13 @@ def test_add_transcript_creates_provenance_document(tmp_path) -> None:
     assert "Today we discussed vector spaces." in document
 
 
-def test_root_index_keeps_all_provided_courses_and_agent_instructions(tmp_path) -> None:
+def test_root_index_keeps_all_provided_courses_without_editing_agent_instructions(
+    tmp_path,
+) -> None:
+    instructions = "# Hand-maintained agent instructions\n"
+    agents_path = tmp_path / "AGENTS.md"
+    agents_path.write_text(instructions)
+
     build_root_index(
         tmp_path,
         [
@@ -239,7 +245,7 @@ def test_root_index_keeps_all_provided_courses_and_agent_instructions(tmp_path) 
     index = (tmp_path / "INDEX.md").read_text()
     assert "math-300/INDEX.md" in index
     assert "math-420/INDEX.md" in index
-    assert "authoritative structured source" in (tmp_path / "AGENTS.md").read_text()
+    assert agents_path.read_text() == instructions
 
 
 def test_status_classifies_missing_upcoming_and_submitted() -> None:

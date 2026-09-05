@@ -687,16 +687,3 @@ def build_root_index(output_root: Path, results: list[dict[str, Any]]) -> None:
             ]
         )
     write_text_if_changed(output_root / "INDEX.md", "\n".join(lines))
-    instructions = """# Canvas mirror instructions for agents
-
-- Start with `INDEX.md`, then read each course's `STATUS.md`.
-- `STATUS.md` is deterministically generated from Canvas dates and submission flags.
-- Treat `.canvas/raw/*.json` as the authoritative structured source for exact fields.
-- Treat `modules/`, `assignments/`, `pages/`, `announcements/`, and `discussions/` as readable renderings of Canvas content.
-- Treat `transcripts/` as user-provided lecture material, not Canvas data.
-- Items under “candidate readings” are inferred from module placement and resource type.
-- Check `synced_at` before describing information as current.
-- Cite the relevant local file when reporting a deadline, status, or course requirement.
-- Do not edit generated mirror files. User-provided transcripts may be added through `canvascli transcript add`.
-"""
-    write_text_if_changed(output_root / "AGENTS.md", instructions)
